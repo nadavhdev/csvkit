@@ -1,0 +1,7 @@
+employee_id,name,department,salary,active
+101,Alice Johnson,Engineering,95000,true
+102,Bob Smith,Marketing,72000,true
+103,Carol Davis,Engineering,88000,true
+104,David Lee,Sales,65000,true
+105,Eve Martinez,Engineering,110000,true
+106,Frank Wilson,Marketing,68000,false

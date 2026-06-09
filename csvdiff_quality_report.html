@@ -1,0 +1,1247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>csvdiff — csvkit feature review</title>
+<style>
+:r
+  --bg:#0b1020; --panel:#131a30; --border:#2a3358; --fg:#e5e7eb; --muted:#9ca3af;
+  --green:#22c55e; --emerald:#10b981; --red:#ef4444; --orange:#f97316;
+  --yellow:#eab308; --blue:#60a5fa; --purple:#a78bfa; --pink:#f472b6;
+  --mono: 'SF Mono','JetBrains Mono','Menlo','Consolas',monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+header {
+  padding: 32px 40px 24px; border-bottom: 1px solid var(--border);
+  display: flex; gap: 24px; align-items: baseline; justify-content: space-between; flex-wrap: wrap;
+}
+header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+header .meta { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+header .meta div { margin-top: 2px; }
+main { max-width: 1240px; margin: 0 auto; padding: 28px 40px 80px; }
+.headline { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.score-big { font-family: var(--mono); font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.score-big .max { color: var(--muted); font-size: 22px; font-weight: 500; }
+.grade-chip {
+  font-family: var(--mono); font-size: 28px; font-weight: 800;
+  letter-spacing: 0.02em; padding: 6px 18px; border-radius: 10px;
+}
+.grade-chip.grade-a { background: rgba(16,185,129,0.18); color: var(--emerald); }
+.grade-chip.grade-b { background: rgba(34,197,94,0.18); color: var(--green); }
+.grade-chip.grade-c { background: rgba(234,179,8,0.18); color: var(--yellow); }
+.grade-chip.grade-d { background: rgba(249,115,22,0.18); color: var(--orange); }
+.grade-chip.grade-f { background: rgba(239,68,68,0.22); color: var(--red); }
+
+.failed-bar-banner {
+  background: rgba(239,68,68,0.10); border: 1px solid rgba(239,68,68,0.45);
+  border-left: 3px solid var(--red); border-radius: 8px;
+  padding: 14px 18px; margin: 20px 0 24px; color: #fecaca; font-size: 13.5px;
+}
+.failed-bar-banner b { color: #fee2e2; }
+
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 20px 0 28px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+.card h3 { margin: 0 0 6px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.card .num { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.card .sub { font-size: 11.5px; color: var(--muted); font-family: var(--mono); margin-top: 6px; }
+.card.score-card .num { color: var(--emerald); }
+.card.bars-card .num { color: var(--red); }
+.card.bars-card.ok .num { color: var(--green); }
+.card.bad-card .num { color: var(--red); }
+.card.weak-card .num { font-size: 14px; color: var(--fg); font-family: var(--mono); }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 22px; }
+.panel > h2 {
+  margin: 0; padding: 14px 20px; font-size: 11.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.panel > .body { padding: 16px 20px; }
+table.breakdown { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.breakdown th, table.breakdown td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+table.breakdown tr:last-child td { border-bottom: none; }
+table.breakdown th { color: var(--muted); font-weight: 500; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; }
+table.breakdown td.num, table.breakdown th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+.bar-bg {
+  display: inline-block; vertical-align: middle; width: 90px; height: 8px;
+  background: rgba(96,165,250,0.10); border-radius: 4px; overflow: hidden;
+  margin-right: 8px;
+}
+.bar-fg { display: block; height: 100%; border-radius: 4px; }
+.bar-fg.bucket-exceptional { background: var(--emerald); }
+.bar-fg.bucket-excellent   { background: var(--green); }
+.bar-fg.bucket-good        { background: var(--yellow); }
+.bar-fg.bucket-ok          { background: var(--orange); }
+.bar-fg.bucket-bad         { background: var(--red); }
+
+.pill {
+  display: inline-block; padding: 2px 9px; border-radius: 99px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; font-family: var(--mono);
+  white-space: nowrap;
+}
+.pill-exceptional { background: rgba(16,185,129,0.20); color: var(--emerald); }
+.pill-excellent   { background: rgba(34,197,94,0.18); color: var(--green); }
+.pill-good        { background: rgba(234,179,8,0.20); color: var(--yellow); }
+.pill-ok          { background: rgba(249,115,22,0.20); color: var(--orange); }
+.pill-bad         { background: rgba(239,68,68,0.22); color: var(--red); }
+.pill-pass        { background: rgba(34,197,94,0.18); color: var(--green); }
+.pill-fail        { background: rgba(239,68,68,0.22); color: var(--red); }
+.pill-weight      { background: rgba(167,139,250,0.18); color: var(--purple); }
+
+details.dim { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin: 10px 0; overflow: hidden; }
+details.dim > summary { cursor: pointer; padding: 14px 20px; display: flex; gap: 14px; align-items: center; list-style: none; }
+details.dim > summary::-webkit-details-marker { display: none; }
+details.dim > summary::before { content: '▸'; color: var(--muted); transition: transform 0.15s; font-size: 11px; }
+details.dim[open] > summary::before { transform: rotate(90deg); }
+details.dim.bucket-exceptional { border-color: rgba(16,185,129,0.45); }
+details.dim.bucket-excellent   { border-color: rgba(34,197,94,0.40); }
+details.dim.bucket-good        { border-color: rgba(234,179,8,0.40); }
+details.dim.bucket-ok          { border-color: rgba(249,115,22,0.40); }
+details.dim.bucket-bad         { border-color: rgba(239,68,68,0.45); }
+details.dim .id   { font-family: var(--mono); font-size: 13px; color: var(--blue); width: 36px; }
+details.dim .name { flex: 1; font-weight: 600; }
+details.dim .score-num {
+  font-family: var(--mono); font-size: 13px; color: var(--fg);
+  font-variant-numeric: tabular-nums; min-width: 48px; text-align: right;
+}
+.dim-body { padding: 4px 22px 18px 22px; font-size: 13.5px; line-height: 1.6; }
+.dim-body h4 { margin: 14px 0 6px; font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.dim-body h4:first-child { margin-top: 6px; }
+.dim-body p { margin: 0; color: #d1d5db; }
+.dim-body .math {
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  margin: 8px 0 14px; padding: 6px 10px; border-left: 2px solid var(--border);
+}
+
+/* Findings table — 4 columns: Aspect | Details | Grade | Suggestions */
+table.findings {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  margin-top: 6px; font-size: 12.8px; table-layout: fixed;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 6px; overflow: hidden;
+  background: rgba(7,11,28,0.35);
+}
+table.findings th, table.findings td {
+  text-align: left; vertical-align: top; padding: 10px 12px;
+  border-right: 1px solid rgba(255,255,255,0.10);
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+}
+table.findings th:last-child, table.findings td:last-child { border-right: none; }
+table.findings tr:last-child td { border-bottom: none; }
+table.findings th {
+  background: rgba(255,255,255,0.04);
+  color: var(--muted); font-weight: 600; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  border-bottom: 1px solid rgba(255,255,255,0.18);
+}
+table.findings td { color: #d1d5db; line-height: 1.5; }
+table.findings col.col-aspect      { width: 17%; }
+table.findings col.col-details     { width: 38%; }
+table.findings col.col-grade       { width: 11%; }
+table.findings col.col-suggestions { width: 34%; }
+table.findings td.col-aspect { font-weight: 600; color: var(--fg); font-size: 13px; }
+table.findings td.col-grade { text-align: center; vertical-align: middle; }
+table.findings ul { margin: 0; padding-left: 16px; }
+table.findings li { margin: 4px 0; color: #d1d5db; }
+table.findings li:first-child { margin-top: 0; }
+
+table.findings tr.row-exceptional td:first-child { box-shadow: inset 3px 0 0 var(--emerald); }
+table.findings tr.row-excellent   td:first-child { box-shadow: inset 3px 0 0 var(--green); }
+table.findings tr.row-good        td:first-child { box-shadow: inset 3px 0 0 var(--yellow); }
+table.findings tr.row-ok          td:first-child { box-shadow: inset 3px 0 0 var(--orange); }
+table.findings tr.row-bad         td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+table.findings tr.row-exceptional td { background: rgba(16,185,129,0.05); }
+table.findings tr.row-excellent   td { background: rgba(34,197,94,0.04); }
+table.findings tr.row-good        td { background: rgba(234,179,8,0.04); }
+table.findings tr.row-ok          td { background: rgba(249,115,22,0.05); }
+table.findings tr.row-bad         td { background: rgba(239,68,68,0.06); }
+
+code {
+  font-family: var(--mono); font-size: 11.5px;
+  background: rgba(96,165,250,0.10); color: var(--blue);
+  padding: 1px 5px; border-radius: 4px;
+}
+.bar-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+.bar-list .bar { display: flex; gap: 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.bar-list .bar:last-child, .bar-list .bar:nth-last-child(2) { border-bottom: none; }
+.bar-list .bar .id { font-family: var(--mono); color: var(--purple); width: 24px; }
+.bar-list .bar .name { flex: 1; color: #d1d5db; font-size: 13px; }
+.recs { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--blue); border-radius: 8px; padding: 16px 22px; }
+.recs ol { margin: 4px 0 0 0; padding-left: 22px; }
+.recs li { margin: 6px 0; color: #d1d5db; }
+.section-title { margin: 36px 0 12px; font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.appendix { margin-top: 30px; }
+.appendix pre {
+  background: #06091a; border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px 14px; margin: 0; overflow: auto;
+  font-family: var(--mono); font-size: 12px; line-height: 1.55; color: #cbd5e1;
+}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>csvdiff — csvkit feature review</h1>
+    <div class="headline">
+      <div class="score-big">7.9<span class="max"> / 10</span></div>
+      <div class="grade-chip grade-c">C</div>
+    </div>
+  </div>
+  <div class="meta">
+    <div>Run: 2026-06-09T00:00:00Z</div>
+    <div>Target: <code>csvdiff</code></div>
+    <div>Bucket: Good</div>
+  </div>
+</header>
+<main>
+
+<section class="cards">
+  <div class="card score-card"><h3>Total score</h3><div class="num">7.9</div><div class="sub">Good — ships, with follow-ups</div></div>
+  <div class="card weak-card"><h3>Weakest dimension</h3><div class="num">D10 Docs &amp; registration</div><div class="sub">Score 5.5 · contributes 27.5 / 100</div></div>
+  <div class="card bad-card"><h3>Bad rows</h3><div class="num">4</div><div class="sub">Across 3 dimensions (D3, D5, D10)</div></div>
+  <div class="card bars-card ok"><h3>Failed bars</h3><div class="num">0</div><div class="sub">of 9 cross-cutting gates</div></div>
+</section>
+
+<section class="panel">
+  <h2>Score breakdown</h2>
+  <div class="body">
+    <table class="breakdown">
+      <thead>
+        <tr><th>Dim</th><th>Name</th><th class="num">Weight</th><th class="num">Score</th><th>Visual</th><th>Bucket</th><th class="num">Contribution</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>D1</code></td><td>Modeling</td><td class="num">15%</td><td class="num">9.0</td><td><span class="bar-bg"><span class="bar-fg bucket-exceptional" style="width: 90%"></span></span></td><td><span class="pill pill-exceptional">Exceptional</span></td><td class="num">135.0</td></tr>
+        <tr><td><code>D2</code></td><td>Package structuring</td><td class="num">3%</td><td class="num">7.5</td><td><span class="bar-bg"><span class="bar-fg bucket-good" style="width: 75%"></span></span></td><td><span class="pill pill-good">Good</span></td><td class="num">22.5</td></tr>
+        <tr><td><code>D3</code></td><td>Component separation</td><td class="num">8%</td><td class="num">7.0</td><td><span class="bar-bg"><span class="bar-fg bucket-good" style="width: 70%"></span></span></td><td><span class="pill pill-good">Good</span></td><td class="num">56.0</td></tr>
+        <tr><td><code>D4</code></td><td>Reuse</td><td class="num">15%</td><td class="num">8.5</td><td><span class="bar-bg"><span class="bar-fg bucket-excellent" style="width: 85%"></span></span></td><td><span class="pill pill-excellent">Excellent</span></td><td class="num">127.5</td></tr>
+        <tr><td><code>D5</code></td><td>Testing coverage</td><td class="num">20%</td><td class="num">6.5</td><td><span class="bar-bg"><span class="bar-fg bucket-ok" style="width: 65%"></span></span></td><td><span class="pill pill-ok">OK</span></td><td class="num">130.0</td></tr>
+        <tr><td><code>D6</code></td><td>Observability</td><td class="num">15%</td><td class="num">9.0</td><td><span class="bar-bg"><span class="bar-fg bucket-exceptional" style="width: 90%"></span></span></td><td><span class="pill pill-exceptional">Exceptional</span></td><td class="num">135.0</td></tr>
+        <tr><td><code>D7</code></td><td>CLI &amp; flag discipline</td><td class="num">6%</td><td class="num">7.5</td><td><span class="bar-bg"><span class="bar-fg bucket-good" style="width: 75%"></span></span></td><td><span class="pill pill-good">Good</span></td><td class="num">45.0</td></tr>
+        <tr><td><code>D8</code></td><td>Error model &amp; exit codes</td><td class="num">6%</td><td class="num">8.5</td><td><span class="bar-bg"><span class="bar-fg bucket-excellent" style="width: 85%"></span></span></td><td><span class="pill pill-excellent">Excellent</span></td><td class="num">51.0</td></tr>
+        <tr><td><code>D9</code></td><td>Data semantics</td><td class="num">7%</td><td class="num">8.5</td><td><span class="bar-bg"><span class="bar-fg bucket-excellent" style="width: 85%"></span></span></td><td><span class="pill pill-excellent">Excellent</span></td><td class="num">59.5</td></tr>
+        <tr><td><code>D10</code></td><td>Documentation &amp; registration</td><td class="num">5%</td><td class="num">5.5</td><td><span class="bar-bg"><span class="bar-fg bucket-bad" style="width: 55%"></span></span></td><td><span class="pill pill-bad">Bad</span></td><td class="num">27.5</td></tr>
+        <tr style="border-top: 2px solid var(--border);"><td colspan="6" style="text-align: right; color: var(--muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.08em;">Total (sum / 100)</td><td class="num"><b>7.9</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Top recommendations</h2>
+  <div class="body">
+    <div class="recs">
+      <ol>
+        <li>Change <code>default_args</code> at <code>tests/test_utilities/test_csvdiff.py:12</code> from <code>['examples/dummy.csv', 'examples/dummy.csv']</code> to <code>['examples/dummy.csv', '-']</code> so <code>EmptyFileTests.test_empty</code> actually reads <code>examples/empty.csv</code>. <b>Lifts D5 6.5 → ~8.0, pushes total above the B threshold.</b></li>
+        <li>Add <code>csvdiff examples/dummy.csv examples/dummy.csv</code> to the stdin smoke-test block at <code>.github/workflows/ci.yml:24-39</code> and a pipe variant at <code>:40-54</code>. <b>Lifts D10 5.5 → ~7.5.</b></li>
+        <li>Hoist the duplicate-key check out of <code>_index_by_key</code> at <code>csvkit/utilities/csvdiff.py:131-142</code> into a <code>_validate_keys_unique()</code> helper called from <code>main()</code> between read and diff. <b>Lifts D3 7.0 → ~8.5.</b></li>
+        <li>Append the contributor to <code>AUTHORS.rst</code> — definition-of-done bullet at <code>csvkit_design_guidelines.md:275</code>.</li>
+        <li>Add a sentence to <code>docs/scripts/csvdiff.rst</code> noting which inherited flags (<code>-l</code>, <code>--add-bom</code>) apply only to <code>--format csv</code>; <code>--add-bom</code> + <code>--format json</code> would emit broken BOM-prefixed JSON.</li>
+        <li>Add a test for the <code>isatty(sys.stdin)</code> + <code>['-']</code> usage-error branch at <code>csvkit/utilities/csvdiff.py:50-51</code>; mock <code>csvkit.cli.isatty</code> and assert via <code>assertError</code>.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<h3 class="section-title">Dimensions</h3>
+
+<!-- ===================== D1 Modeling — 9.0 Exceptional ===================== -->
+<details class="dim bucket-exceptional">
+  <summary>
+    <span class="id">D1</span><span class="name">Modeling</span>
+    <span class="pill pill-weight">15%</span>
+    <span class="pill pill-exceptional">Exceptional</span>
+    <span class="score-num">9.0 / 10</span>
+  </summary>
+  <div class="dim-body">
+    <h4>Rationale</h4>
+    <p>Clean extension of csvkit primitives (tables, rows, columns, typed cells) with one well-named addition — "key column(s)" for row identity — and an explicit schema-vs-row split for results. The <code>epilog</code> at <code>csvdiff.py:16-22</code> matches the guideline's 9–10 calibration anchor verbatim.</p>
+    <div class="math">score 9.0 × weight 15% = contribution 135.0</div>
+
+    <table class="findings">
+      <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
+      <thead><tr><th>Aspect</th><th>Details</th><th>Grade</th><th>Suggestions</th></tr></thead>
+      <tbody>
+        <tr class="row-good">
+          <td class="col-aspect">Description tone</td>
+          <td><ul>
+            <li>One-line at <code>csvdiff.py:15</code> fits the suite pattern (<code>csvjoin.py:11</code>, <code>csvsort.py:20</code>)</li>
+            <li>Names what (diff) and the output (added/removed/changed)</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Add "matched by key or position" to teach the row-identity model upfront</li>
+            <li>Mirror csvjoin's "on a specified column" identity hint</li>
+          </ul></td>
+        </tr>
+        <tr class="row-exceptional">
+          <td class="col-aspect">Epilog density</td>
+          <td><ul>
+            <li>Discloses memory + typed-equality + 0/1/2 exit code in three sentences at <code>csvdiff.py:16-22</code></li>
+            <li><code>csvjoin.py:12</code> (the template epilog) discloses only memory</li>
+            <li>Matches the guideline's 9–10 calibration anchor verbatim</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-exceptional">Exceptional</span></td>
+          <td><ul>
+            <li>Propagate to <code>csvsort</code>, <code>csvjoin</code>, <code>csvstat</code> epilogs</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Flag naming</td>
+          <td><ul>
+            <li><code>--key</code>, <code>--format</code>, <code>--no-inference</code> at <code>csvdiff.py:30-47</code> describe outcomes, not internals</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Help strings don't cross-reference each other</li>
+            <li>Add a note on <code>--format</code> that JSON/CSV preserve the same key-column structure</li>
+          </ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">Schema-vs-row split</td>
+          <td><ul>
+            <li>Stated up front in <code>docs/scripts/csvdiff.rst:51</code> ("schema differences vs row differences")</li>
+            <li>Reflected in the actual output structure</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>rst names the split but shows no side-by-side output sample</li>
+            <li>Add a 4-line sample showing both sections under one invocation</li>
+          </ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">Identity rule statement</td>
+          <td><ul>
+            <li><code>docs/scripts/csvdiff.rst:50</code>: "matched by key column(s); without <code>--key</code>, compared positionally"</li>
+            <li>User-facing language; no need to read source</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>Says what each mode does but not when to pick which</li>
+            <li>Add: "use <code>--key</code> when row order may differ; rely on positional only when both files are exports of the same query"</li>
+          </ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<!-- ===================== D2 Package structuring — 7.5 Good ===================== -->
+<details class="dim bucket-good">
+  <summary>
+    <span class="id">D2</span><span class="name">Package structuring</span>
+    <span class="pill pill-weight">3%</span>
+    <span class="pill pill-good">Good</span>
+    <span class="score-num">7.5 / 10</span>
+  </summary>
+  <div class="dim-body">
+    <h4>Rationale</h4>
+    <p>Every conventional location is filled. Helpers are inside the utility module — appropriate because they aren't reused elsewhere. Fixture naming discipline lifts what would otherwise be a flat-Good dimension.</p>
+    <div class="math">score 7.5 × weight 3% = contribution 22.5</div>
+
+    <table class="findings">
+      <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
+      <thead><tr><th>Aspect</th><th>Details</th><th>Grade</th><th>Suggestions</th></tr></thead>
+      <tbody>
+        <tr class="row-good">
+          <td class="col-aspect">Module path &amp; class name</td>
+          <td><ul>
+            <li>Module at <code>csvkit/utilities/csvdiff.py</code>; class <code>CSVDiff(CSVKitUtility)</code> at <code>csvdiff.py:14</code></li>
+            <li>Lowercase, single word, no underscores</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard location and class name; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Launch footer</td>
+          <td><ul>
+            <li><code>launch_new_instance()</code> at <code>csvdiff.py:336</code> with <code>__main__</code> footer at 341</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard pattern repeated across the suite; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Test location</td>
+          <td><ul>
+            <li>Tests at <code>tests/test_utilities/test_csvdiff.py</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Test module has no module-level docstring</li>
+            <li>Add a 1-line summary ("Tests for csvdiff: keyed + positional matching, schema diff, three output formats")</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Helper scope</td>
+          <td><ul>
+            <li>Helpers (<code>_compute_schema_diff</code>, <code>_diff_keyed</code>, etc.) kept internal to the utility module</li>
+            <li>Not reused elsewhere yet</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>If a future tool needs schema-diff logic, extract to <code>csvkit/diff.py</code></li>
+            <li>Premature now; not worth refactoring</li>
+          </ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">Fixture naming</td>
+          <td><ul>
+            <li>Names follow <code>&lt;topic&gt;_&lt;variant&gt;.csv</code>: <code>diff_a</code>, <code>diff_b</code>, <code>diff_a_added_col</code>, <code>diff_a_removed_col</code>, <code>diff_a_reordered_col</code>, <code>diff_a_resorted</code>, <code>diff_a_typed</code>, <code>diff_a_dup_keys</code>, <code>diff_composite_a/b</code></li>
+            <li>Each variant differs meaningfully from the base</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>No manifest — reader has to <code>cat</code> each fixture to learn what each encodes</li>
+            <li>Add a one-line comment per fixture at the top of <code>test_csvdiff.py</code> or a short <code>examples/</code> README</li>
+          </ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<!-- ===================== D3 Component separation — 7.0 Good ===================== -->
+<details class="dim bucket-good" open>
+  <summary>
+    <span class="id">D3</span><span class="name">Component separation</span>
+    <span class="pill pill-weight">8%</span>
+    <span class="pill pill-good">Good</span>
+    <span class="score-num">7.0 / 10</span>
+  </summary>
+  <div class="dim-body">
+    <h4>Rationale</h4>
+    <p><code>main()</code> follows the four-phase order; neither <code>__init__</code> nor <code>run()</code> is overridden. The <code>try/finally</code> around each file's <code>from_csv</code> is stricter than the template. Held below Excellent by the duplicate-key validation living in the transform phase.</p>
+    <div class="math">score 7.0 × weight 8% = contribution 56.0</div>
+
+    <table class="findings">
+      <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
+      <thead><tr><th>Aspect</th><th>Details</th><th>Grade</th><th>Suggestions</th></tr></thead>
+      <tbody>
+        <tr class="row-good">
+          <td class="col-aspect">Four-phase ordering</td>
+          <td><ul>
+            <li><code>main()</code> at <code>csvdiff.py:49-108</code> follows validate → read → transform → write</li>
+            <li>Visible from indentation</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Visible from indentation but not from comments</li>
+            <li>Add <code># 1. Validate  2. Read  3. Diff  4. Write</code> comment block at the top of <code>main()</code></li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Base lifecycle methods</td>
+          <td><ul>
+            <li>Neither <code>__init__</code> nor <code>run()</code> overridden</li>
+            <li>Inherits both from <code>cli.py:77-149</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard inheritance; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-exceptional">
+          <td class="col-aspect">File handling in read loop</td>
+          <td><ul>
+            <li><code>try/finally</code> wraps each <code>from_csv</code> at <code>csvdiff.py:62-71</code></li>
+            <li>Handles close even if reading raises</li>
+            <li>The template at <code>csvjoin.py:74-82</code> closes without exception protection</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-exceptional">Exceptional</span></td>
+          <td><ul>
+            <li>Propagate to <code>csvjoin</code> and any other multi-file tool — pure mechanical win</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Helper factoring</td>
+          <td><ul>
+            <li>Sub-logic factored into named helpers: <code>_compute_schema_diff</code>, <code>_diff_keyed</code>, <code>_diff_positional</code>, <code>_resolve_key_ids</code>, <code>_index_by_key</code>, <code>_write_text/_json/_csv</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>None of the helpers has a docstring</li>
+            <li>A one-line docstring on each (especially <code>_diff_keyed</code> vs <code>_diff_positional</code>) would document the row-identity choice at the function boundary</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Data-driven column validation</td>
+          <td><ul>
+            <li>Post-read validation in <code>_resolve_key_ids</code> at <code>csvdiff.py:110-119</code></li>
+            <li>Mirrors <code>csvjoin.py:84-88</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Pattern correct but tacit</li>
+            <li>Inline comment noting "data-driven validation runs after read; usage errors via argparser.error" would document the deliberate ordering</li>
+          </ul></td>
+        </tr>
+        <tr class="row-bad">
+          <td class="col-aspect">Duplicate-key validation phase</td>
+          <td><ul>
+            <li>Check at <code>csvdiff.py:131-142</code> calls <code>argparser.error</code> inside <code>_index_by_key</code></li>
+            <li><code>_index_by_key</code> is invoked from <code>_diff_keyed</code> during the transform phase</li>
+            <li>Violates the four-phase contract (validate before transform)</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-bad">Bad</span></td>
+          <td><ul>
+            <li>Hoist to <code>_validate_keys_unique()</code> helper called from <code>main()</code></li>
+            <li>Run after read but before <code>_diff_keyed</code></li>
+            <li><b>Lifts D3 7.0 → ~8.5</b></li>
+          </ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<!-- ===================== D4 Reuse — 8.5 Excellent ===================== -->
+<details class="dim bucket-excellent">
+  <summary>
+    <span class="id">D4</span><span class="name">Reuse</span>
+    <span class="pill pill-weight">15%</span>
+    <span class="pill pill-excellent">Excellent</span>
+    <span class="score-num">8.5 / 10</span>
+  </summary>
+  <div class="dim-body">
+    <h4>Rationale</h4>
+    <p>Every applicable base-class facility is reused; no type tester constructed by hand; no file opened with raw <code>open()</code>. Lifted to Excellent by <code>_resolve_key_ids</code>'s thoughtful divergence to attach a file label to each column-resolution error.</p>
+    <div class="math">score 8.5 × weight 15% = contribution 127.5</div>
+
+    <table class="findings">
+      <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
+      <thead><tr><th>Aspect</th><th>Details</th><th>Grade</th><th>Suggestions</th></tr></thead>
+      <tbody>
+        <tr class="row-good">
+          <td class="col-aspect">Standard facility usage</td>
+          <td><ul>
+            <li><code>match_column_identifier</code> at <code>csvdiff.py:115</code></li>
+            <li><code>_open_input_file</code> at 61; <code>get_column_types()</code> at 57</li>
+            <li><code>get_column_offset()</code> at 112; <code>isatty</code> at 50</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Imports at <code>csvdiff.py:8-9</code> split into two lines (cli helpers vs exceptions)</li>
+            <li>Verify with <code>isort --check-only</code> depending on project config</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Canonical from_csv idiom</td>
+          <td><ul>
+            <li><code>csvdiff.py:56-69</code> mirrors <code>csvjoin.py:71-82</code> and <code>csvsort.py:54-60</code> exactly</li>
+            <li>Includes <code>sniff_limit = -1 → None</code> pattern</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>The <code>sniff_limit</code> conversion is repeated identically across every utility</li>
+            <li>Extract to <code>self.resolve_sniff_limit()</code> on <code>CSVKitUtility</code> to reduce suite-wide duplication</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">reader/writer kwargs</td>
+          <td><ul>
+            <li><code>reader_kwargs</code>/<code>writer_kwargs</code> threaded at <code>csvdiff.py:68, 312</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li><code>writer_kwargs</code> at line 312 are no-ops for <code>--format text/json</code> (which write directly)</li>
+            <li>Add comment so a reader doesn't wonder why <code>-l/--linenumbers</code> seems ignored under text mode</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Override flags</td>
+          <td><ul>
+            <li><code>override_flags = ['f']</code> at <code>csvdiff.py:24</code> matches the multi-input precedent in <code>csvjoin.py:14</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Comment at line 23 could list which other inherited flags are NOT overridden (<code>-l</code>, <code>--add-bom</code>)</li>
+            <li>Documents the maintenance choice in place</li>
+          </ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">Per-name column resolution</td>
+          <td><ul>
+            <li><code>_resolve_key_ids</code> at <code>csvdiff.py:110-119</code> calls <code>match_column_identifier</code> per key name</li>
+            <li>Attaches a file label ("first"/"second input file") to each error</li>
+            <li>Diverges from <code>parse_column_identifiers</code> deliberately to preserve the label</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>The <code>label</code> arg is a hardcoded string; doesn't scale beyond two inputs</li>
+            <li>Derive from input index (<code>f"input file #{i+1}"</code>) to future-proof a hypothetical multi-way diff</li>
+          </ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">ColumnIdentifierError reroute</td>
+          <td><ul>
+            <li>Reuses <code>ColumnIdentifierError</code> from <code>csvkit/exceptions.py:19</code></li>
+            <li>Reroutes via <code>argparser.error</code> at <code>csvdiff.py:114-118</code></li>
+            <li>No new exception type invented</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>Except clause discards the original error's "Column names are: …" hint at <code>cli.py:500-501</code></li>
+            <li>Carry that hint forward in the rerouted message</li>
+          </ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<!-- ===================== D5 Testing coverage — 6.5 OK ===================== -->
+<details class="dim bucket-ok" open>
+  <summary>
+    <span class="id">D5</span><span class="name">Testing coverage</span>
+    <span class="pill pill-weight">20%</span>
+    <span class="pill pill-ok">OK</span>
+    <span class="score-num">6.5 / 10</span>
+  </summary>
+  <div class="dim-body">
+    <h4>Rationale</h4>
+    <p>Broad test surface — 19 tests covering keyed/positional, schema diffs, typed equality (both branches), composite keys, all three formats, stdin, both exit codes. Held to OK by one structural defect that matches a guideline calibration anchor: <code>default_args</code> makes <code>EmptyFileTests</code> a vacuous pass.</p>
+    <div class="math">score 6.5 × weight 20% = contribution 130.0</div>
+
+    <table class="findings">
+      <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
+      <thead><tr><th>Aspect</th><th>Details</th><th>Grade</th><th>Suggestions</th></tr></thead>
+      <tbody>
+        <tr class="row-bad">
+          <td class="col-aspect">EmptyFileTests mixin setup</td>
+          <td><ul>
+            <li><code>default_args = ['examples/dummy.csv', 'examples/dummy.csv']</code> at <code>test_csvdiff.py:12</code></li>
+            <li>Stdin redirected to <code>examples/empty.csv</code> but never read (both positional args point at dummy.csv)</li>
+            <li>Mixin passes vacuously; empty-CSV path is not actually exercised</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-bad">Bad</span></td>
+          <td><ul>
+            <li>Change to <code>['examples/dummy.csv', '-']</code> so the stdin-redirected empty file is read</li>
+            <li><b>Lifts D5 6.5 → ~8.0, ≈ +0.3 total, pushes letter to B</b></li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">test_launch_new_instance</td>
+          <td><ul>
+            <li>Present at <code>test_csvdiff.py:14-19</code></li>
+            <li><code>CSVKitTestCase</code> + <code>EmptyFileTests</code> mixed in at line 10</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Only smoke-tests valid args; doesn't exercise the <code>--help</code> path</li>
+          </ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">argparser.error path coverage</td>
+          <td><ul>
+            <li>Duplicate keys (<code>test_csvdiff.py:137-143</code>)</li>
+            <li>Bad key column (145-151)</li>
+            <li>Wrong file count (153-159)</li>
+            <li>All asserted via <code>assertError</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>Three separate methods with near-identical scaffolding</li>
+            <li>Collapse into one parametric test using <code>self.subTest</code></li>
+          </ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">Stdin testing</td>
+          <td><ul>
+            <li><code>test_stdin_input</code> at <code>test_csvdiff.py:161-167</code> uses the standard <code>stdin_as_string</code> helper from <code>tests/utils.py:40</code></li>
+            <li>No hand-rolled redirect</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>Only exercises stdin-as-second-file</li>
+            <li>Stdin-as-first-file (<code>['-', 'examples/diff_b.csv']</code>) is a different open ordering in main() and isn't tested</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Output format coverage</td>
+          <td><ul>
+            <li><code>test_json_format</code> at 169-185 and <code>test_csv_format</code> at 187-200</li>
+            <li>CSV mode includes per-column expansion</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Each format has one happy-path test</li>
+            <li>Add a round-trip test per format (parse JSON/CSV output, re-derive payload, compare to expected)</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Exit code testing</td>
+          <td><ul>
+            <li>Both codes asserted independently at <code>test_csvdiff.py:211-217</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Asserted in isolation</li>
+            <li>Add combined test against files differing in multiple ways simultaneously asserting exit code is 1</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Composite key coverage</td>
+          <td><ul>
+            <li><code>test_composite_key</code> at 69-77 covers one composite key</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Add a second test where key columns appear in different positions in the two files</li>
+            <li>Stresses the <code>_index_by_key</code> logic</li>
+          </ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">Schema-drift coverage</td>
+          <td><ul>
+            <li>Separate tests for added column, removed column, reordered columns</li>
+            <li><code>test_schema_added_column</code> at 86-94 asserts "0 changed, 3 unchanged" when only schema differs</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>All schema tests use <code>diff_a.csv</code> as the "before" file</li>
+            <li>Bidirectional case (file A has X but not Y, file B has Y but not X) is not covered</li>
+          </ul></td>
+        </tr>
+        <tr class="row-exceptional">
+          <td class="col-aspect">Typed-equality boundary</td>
+          <td><ul>
+            <li><code>test_typed_equality_default</code> at <code>test_csvdiff.py:112-118</code> and <code>test_no_inference_string_compare</code> at 120-127</li>
+            <li>Cover both sides of the typed-vs-string equality boundary</li>
+            <li>Matches the 9–10 calibration anchor; canonical templates' tests don't exercise this boundary</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-exceptional">Exceptional</span></td>
+          <td><ul><li>—</li></ul></td>
+        </tr>
+        <tr class="row-ok">
+          <td class="col-aspect">Exit-code test helper</td>
+          <td><ul>
+            <li><code>_run</code> helper at <code>test_csvdiff.py:21-29</code> wraps the standard pattern to capture <code>SystemExit.code</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-ok">OK</span></td>
+          <td><ul>
+            <li>Propose an <code>assertExitCode(args, expected_code)</code> helper in <code>tests/utils.py</code></li>
+            <li>Other exit-code-producing tools (csvclean) could reuse it</li>
+          </ul></td>
+        </tr>
+        <tr class="row-ok">
+          <td class="col-aspect">isatty branch test</td>
+          <td><ul>
+            <li>No test for the <code>isatty(sys.stdin) and ['-']</code> usage-error branch at <code>csvdiff.py:50-51</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-ok">OK</span></td>
+          <td><ul>
+            <li>Add a test using <code>unittest.mock.patch('csvkit.cli.isatty')</code> + <code>assertError</code></li>
+            <li>Closes the last untested error path</li>
+          </ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<!-- ===================== D6 Observability — 9.0 Exceptional ===================== -->
+<details class="dim bucket-exceptional">
+  <summary>
+    <span class="id">D6</span><span class="name">Observability</span>
+    <span class="pill pill-weight">15%</span>
+    <span class="pill pill-exceptional">Exceptional</span>
+    <span class="score-num">9.0 / 10</span>
+  </summary>
+  <div class="dim-body">
+    <h4>Rationale</h4>
+    <p>Error messages in csvdiff are the best in the suite for a multi-file tool — they name both column and file, and the duplicate-key message packs three pieces of context into one sentence. Standard stderr discipline holds; base-class exception handler is not overridden.</p>
+    <div class="math">score 9.0 × weight 15% = contribution 135.0</div>
+
+    <table class="findings">
+      <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
+      <thead><tr><th>Aspect</th><th>Details</th><th>Grade</th><th>Suggestions</th></tr></thead>
+      <tbody>
+        <tr class="row-exceptional">
+          <td class="col-aspect">Multi-file error naming</td>
+          <td><ul>
+            <li><code>csvdiff.py:117-118</code> names both the failing column and the file ("Key column 'X' was not found in the first input file")</li>
+            <li>Template at <code>csvjoin.py:88</code> via bare <code>match_column_identifier</code> would surface only "Column 'X' is invalid"</li>
+            <li>Matches the 9–10 calibration anchor verbatim</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-exceptional">Exceptional</span></td>
+          <td><ul>
+            <li>Propagate the "name the file" pattern to csvjoin's column-resolution errors</li>
+          </ul></td>
+        </tr>
+        <tr class="row-exceptional">
+          <td class="col-aspect">Duplicate-key error context</td>
+          <td><ul>
+            <li><code>csvdiff.py:137-140</code> packs three pieces into one sentence: actual duplicated key value (pretty-printed via <code>_value_to_str</code>), file name, and the constraint</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-exceptional">Exceptional</span></td>
+          <td><ul><li>—</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">argparser.error routing</td>
+          <td><ul>
+            <li>All errors via <code>argparser.error</code> at <code>csvdiff.py:51, 54, 117-118, 137-140</code></li>
+            <li>Stderr + exit 2</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard discipline; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Excepthook inheritance</td>
+          <td><ul>
+            <li>No custom <code>sys.excepthook</code> installed</li>
+            <li>Inherits base-class handler at <code>cli.py:332-350</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Output channel discipline</td>
+          <td><ul>
+            <li>Output goes to <code>self.output_file</code></li>
+            <li>No status messages on stdout</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Progress noise</td>
+          <td><ul>
+            <li>No spinners, row counters, or ETA</li>
+            <li>Matches the suite's silent-by-default convention</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>For a tool reading two whole files into memory, an opt-in <code>-v</code> progress hint ("Indexing N rows of first file…") would help users near the memory ceiling</li>
+            <li>Keep default silent</li>
+          </ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<!-- ===================== D7 CLI & flag discipline — 7.5 Good ===================== -->
+<details class="dim bucket-good">
+  <summary>
+    <span class="id">D7</span><span class="name">CLI &amp; flag discipline</span>
+    <span class="pill pill-weight">6%</span>
+    <span class="pill pill-good">Good</span>
+    <span class="score-num">7.5 / 10</span>
+  </summary>
+  <div class="dim-body">
+    <h4>Rationale</h4>
+    <p>No inherited common-arg flag redefined; suite-consistent letter choices; help text is complete-sentence prose. Held to Good by two undocumented output-flag interactions and one semantic overlap with csvjson's <code>-k</code>.</p>
+    <div class="math">score 7.5 × weight 6% = contribution 45.0</div>
+
+    <table class="findings">
+      <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
+      <thead><tr><th>Aspect</th><th>Details</th><th>Grade</th><th>Suggestions</th></tr></thead>
+      <tbody>
+        <tr class="row-good">
+          <td class="col-aspect">Inherited flag discipline</td>
+          <td><ul>
+            <li>No inherited common flag redefined</li>
+            <li><code>override_flags = ['f']</code> at <code>csvdiff.py:24</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard discipline; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">snifflimit semantics</td>
+          <td><ul>
+            <li><code>-y/--snifflimit</code> at <code>csvdiff.py:39-42</code> uses the suite-standard default (1024) and <code>0</code>/<code>-1</code> semantics</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard semantics; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">no-inference semantics</td>
+          <td><ul>
+            <li><code>-I/--no-inference</code> at <code>csvdiff.py:43-47</code> matches suite-standard meaning</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard semantics; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Long-form hyphenation</td>
+          <td><ul>
+            <li>Multi-word flags use hyphens (<code>--no-inference</code>, <code>--snifflimit</code>), no underscores</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">Help text quality</td>
+          <td><ul>
+            <li>Every <code>add_argument</code> has a complete-sentence help string at <code>csvdiff.py:26-47</code></li>
+            <li><code>--format</code> help lists choices and identifies the default ("Defaults to 'text', a human-readable summary")</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li><code>-y</code> and <code>-I</code> help strings are near-verbatim from <code>csvjoin</code>/<code>csvsort</code></li>
+            <li>Add a sentence on how <code>-I</code> affects diffing specifically (e.g. "30" vs "30.0" diverge)</li>
+          </ul></td>
+        </tr>
+        <tr class="row-ok">
+          <td class="col-aspect">-k semantic overlap</td>
+          <td><ul>
+            <li><code>-k/--key</code> at <code>csvdiff.py:30-34</code> overlaps semantically with csvjson's <code>-k/--key</code> (JSON output key)</li>
+            <li>Different abstraction levels; not a strict collision</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-ok">OK</span></td>
+          <td><ul>
+            <li>Add one sentence to <code>docs/scripts/csvdiff.rst</code> noting the semantic split</li>
+            <li>Or accept the overlap — help text disambiguates</li>
+          </ul></td>
+        </tr>
+        <tr class="row-ok">
+          <td class="col-aspect">Output flag interactions</td>
+          <td><ul>
+            <li><code>-l/--linenumbers</code> and <code>--add-bom</code> inherited but only meaningfully apply to <code>--format csv</code></li>
+            <li>No-op silently under <code>--format text</code></li>
+            <li><code>--add-bom</code> + <code>--format json</code> would emit parser-breaking BOM-prefixed JSON</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-ok">OK</span></td>
+          <td><ul>
+            <li>Add an "Output flag interactions" sentence to <code>docs/scripts/csvdiff.rst</code></li>
+            <li><b>Lifts D7 7.5 → ~8.5</b></li>
+          </ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<!-- ===================== D8 Error model & exit codes — 8.5 Excellent ===================== -->
+<details class="dim bucket-excellent">
+  <summary>
+    <span class="id">D8</span><span class="name">Error model &amp; exit codes</span>
+    <span class="pill pill-weight">6%</span>
+    <span class="pill pill-excellent">Excellent</span>
+    <span class="score-num">8.5 / 10</span>
+  </summary>
+  <div class="dim-body">
+    <h4>Rationale</h4>
+    <p>Introduces a new "differences found" exit code and discloses it textbook-style. Named constant, three-surface disclosure (epilog + rst + tests), <code>ColumnIdentifierError</code> caught and rerouted via <code>argparser.error</code>.</p>
+    <div class="math">score 8.5 × weight 6% = contribution 51.0</div>
+
+    <table class="findings">
+      <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
+      <thead><tr><th>Aspect</th><th>Details</th><th>Grade</th><th>Suggestions</th></tr></thead>
+      <tbody>
+        <tr class="row-excellent">
+          <td class="col-aspect">EXIT_DIFFERENT constant naming</td>
+          <td><ul>
+            <li><code>EXIT_DIFFERENT = 1</code> named constant at <code>csvdiff.py:11</code></li>
+            <li>Clearer than <code>csvclean.py:114</code>'s bare <code>sys.exit(1)</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>No matching <code>EXIT_OK = 0</code> or <code>EXIT_USAGE = 2</code> constants</li>
+            <li>Named-constant convention starts and stops at this one code</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">argparser.error coverage</td>
+          <td><ul>
+            <li>All usage errors via <code>argparser.error</code> (exit 2)</li>
+            <li>No bare <code>sys.exit(2)</code> anywhere</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard discipline; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">ColumnIdentifierError reroute</td>
+          <td><ul>
+            <li>Caught and rerouted via <code>argparser.error</code> at <code>csvdiff.py:114-118</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Catches only <code>ColumnIdentifierError</code></li>
+            <li>Broader catch for <code>RequiredHeaderError</code> would future-proof against <code>--no-header-row</code> paired with string key</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">csvclean precedent</td>
+          <td><ul>
+            <li>Follows <code>csvclean.py:114</code> precedent for non-zero data-condition exits</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Pattern correct but tacit</li>
+            <li>One-line comment near <code>EXIT_DIFFERENT</code> linking <code>csvclean.py:114</code> would make precedent explicit</li>
+          </ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">Three-surface disclosure</td>
+          <td><ul>
+            <li>0/1/2 contract disclosed in epilog (<code>csvdiff.py:16-22</code>)</li>
+            <li>rst (<code>docs/scripts/csvdiff.rst:56-61</code>)</li>
+            <li>Tests (<code>test_csvdiff.py:211-217</code>)</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>Three disclosures stand alone — no cross-references</li>
+            <li>Docstring on <code>EXIT_DIFFERENT</code> referencing the rst section would tie them together</li>
+          </ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<!-- ===================== D9 Data semantics — 8.5 Excellent ===================== -->
+<details class="dim bucket-excellent">
+  <summary>
+    <span class="id">D9</span><span class="name">Data semantics</span>
+    <span class="pill pill-weight">7%</span>
+    <span class="pill pill-excellent">Excellent</span>
+    <span class="score-num">8.5 / 10</span>
+  </summary>
+  <div class="dim-body">
+    <h4>Rationale</h4>
+    <p>Type handling correct and visible to the user. <code>get_column_types()</code> threads all inheritance flags; <code>-I</code> documented in user terms in both help text and rst — depth most csvkit tools' docs don't reach.</p>
+    <div class="math">score 8.5 × weight 7% = contribution 59.5</div>
+
+    <table class="findings">
+      <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
+      <thead><tr><th>Aspect</th><th>Details</th><th>Grade</th><th>Suggestions</th></tr></thead>
+      <tbody>
+        <tr class="row-good">
+          <td class="col-aspect">get_column_types threading</td>
+          <td><ul>
+            <li><code>csvdiff.py:57</code> threads <code>--blanks</code>, <code>--null-value</code>, <code>--date-format</code>, <code>--datetime-format</code>, <code>--no-leading-zeroes</code>, <code>--locale</code> through the factory at <code>cli.py:352-389</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Call site lacks comment noting implication for diff equality (typed comparison)</li>
+            <li>Half-line aside ("typed comparison: 1 == 1.0 unless -I") would self-document</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Sniff-limit semantics</td>
+          <td><ul>
+            <li><code>csvdiff.py:56</code> uses suite-standard semantics (default 1024, <code>-1 → None</code>)</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard semantics; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">-I help text explanation</td>
+          <td><ul>
+            <li><code>csvdiff.py:43-47</code> names the user-visible effect ("'1' and '1.0' compare as different strings")</li>
+            <li>Not just the implementation switch</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>Example covers numbers but not dates or booleans (equally affected by inference)</li>
+            <li>Add "and similarly for dates and booleans" or a second example</li>
+          </ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">rst typed-equality explanation</td>
+          <td><ul>
+            <li><code>docs/scripts/csvdiff.rst:52</code> explains in user terms: "numeric 1 equals numeric 1.0; date string and its ISO normalization compare equal"</li>
+            <li>Most csvkit tools leave <code>-I</code> undocumented at rst layer</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>Uses "ISO normalization" without defining what counts as ISO for a date</li>
+            <li>First-time reader doesn't necessarily know "2024-01-01" and "2024-1-1" both parse to the same agate Date</li>
+            <li>One concrete date example would lift this to Exceptional</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Round-trip verification</td>
+          <td><ul>
+            <li>Verified by typed-equality test and <code>-I</code> test at <code>test_csvdiff.py:112-127</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Verified for numbers only</li>
+            <li>Add a third test exercising <code>--date-format</code> with a non-ISO input to lock down date inference at the same boundary</li>
+          </ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<!-- ===================== D10 Documentation & registration — 5.5 Bad ===================== -->
+<details class="dim bucket-bad" open>
+  <summary>
+    <span class="id">D10</span><span class="name">Documentation &amp; registration</span>
+    <span class="pill pill-weight">5%</span>
+    <span class="pill pill-bad">Bad</span>
+    <span class="score-num">5.5 / 10</span>
+  </summary>
+  <div class="dim-body">
+    <h4>Rationale</h4>
+    <p>The "definition of done" checklist is partially met — scripts entry, man page, rst with all sections, cli.rst link, CHANGELOG. Two FAIL signals drop the score: CI smoke tests not updated, and AUTHORS not updated. The exit-code contract is disclosed in three surfaces (one Excellent row), but otherwise the dimension is just standard plus two recoverable Bad rows.</p>
+    <div class="math">score 5.5 × weight 5% = contribution 27.5</div>
+
+    <table class="findings">
+      <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
+      <thead><tr><th>Aspect</th><th>Details</th><th>Grade</th><th>Suggestions</th></tr></thead>
+      <tbody>
+        <tr class="row-good">
+          <td class="col-aspect">project.scripts entry</td>
+          <td><ul>
+            <li><code>csvdiff = "csvkit.utilities.csvdiff:launch_new_instance"</code> at <code>pyproject.toml:58</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard registration; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Man page registration</td>
+          <td><ul>
+            <li><code>man/csvdiff.1</code> registered at <code>pyproject.toml:79</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Run <code>man -l man/csvdiff.1</code> once to confirm the Exit codes section renders correctly</li>
+            <li>Auto-generated rst→man can drop list formatting around code blocks</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">rst structure</td>
+          <td><ul>
+            <li><code>docs/scripts/csvdiff.rst</code> with Description, See also, Behavior, Exit codes, Examples</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Examples section lists invocations but doesn't show expected output</li>
+            <li>Add a 3-line "Output" block under each example to showcase schema-vs-row split and exit-code behavior concretely</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">cli.rst link</td>
+          <td><ul>
+            <li>Linked alphabetically in <code>docs/cli.rst:24</code> under Processing</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Standard placement; no realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">CHANGELOG entry</td>
+          <td><ul>
+            <li>At top of <code>CHANGELOG.rst:4</code> in <code>feat: :doc:\`/scripts/csvdiff\`</code> style</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul>
+            <li>Doesn't explicitly mention the new exit code (1)</li>
+            <li>That's the most user-visible new behavior in the suite and is currently implicit</li>
+          </ul></td>
+        </tr>
+        <tr class="row-good">
+          <td class="col-aspect">Memory bound disclosure</td>
+          <td><ul>
+            <li>Epilog at <code>csvdiff.py:16-22</code>: "Both files are read fully into memory… Don't try this on very large files"</li>
+            <li>Satisfies bar D</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-good">Good</span></td>
+          <td><ul><li>Disclosed; satisfies bar D. No realistic lift</li></ul></td>
+        </tr>
+        <tr class="row-excellent">
+          <td class="col-aspect">Exit-code three-surface disclosure</td>
+          <td><ul>
+            <li>Contract disclosed in epilog (<code>csvdiff.py:16-22</code>), rst (<code>docs/scripts/csvdiff.rst:56-61</code>), and tests (<code>test_csvdiff.py:211-217</code>)</li>
+            <li>Meets the guideline's full disclosure standard</li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-excellent">Excellent</span></td>
+          <td><ul>
+            <li>Three disclosures stand independent — no cross-references between them</li>
+            <li>A future contract change has to be propagated to all three places by hand</li>
+          </ul></td>
+        </tr>
+        <tr class="row-bad">
+          <td class="col-aspect">CI stdin smoke test</td>
+          <td><ul>
+            <li>csvdiff missing from stdin block at <code>.github/workflows/ci.yml:24-39</code></li>
+            <li>Every shipping tool except csvpy is in the list</li>
+            <li>FAIL signal per <code>csvkit_design_guidelines.md:277</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-bad">Bad</span></td>
+          <td><ul>
+            <li>Add <code>csvdiff examples/dummy.csv examples/dummy.csv</code> to the block</li>
+            <li><b>Lifts D10 by ~0.7</b></li>
+          </ul></td>
+        </tr>
+        <tr class="row-bad">
+          <td class="col-aspect">CI pipe smoke test</td>
+          <td><ul>
+            <li>csvdiff missing from pipe block at <code>.github/workflows/ci.yml:40-54</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-bad">Bad</span></td>
+          <td><ul>
+            <li>Add <code>printf 'a,b,c\n1,2,3' | csvdiff examples/dummy.csv -</code> to the block</li>
+          </ul></td>
+        </tr>
+        <tr class="row-bad">
+          <td class="col-aspect">AUTHORS update</td>
+          <td><ul>
+            <li>Contributor not appended to <code>AUTHORS.rst</code></li>
+            <li>Definition-of-done bullet at <code>csvkit_design_guidelines.md:275</code></li>
+          </ul></td>
+          <td class="col-grade"><span class="pill pill-bad">Bad</span></td>
+          <td><ul>
+            <li>Append one line to <code>AUTHORS.rst</code></li>
+            <li><b>Lifts D10 by ~0.3</b></li>
+          </ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<h3 class="section-title">Cross-cutting bars</h3>
+<section class="panel"><div class="body">
+  <div class="bar-list">
+    <div class="bar"><span class="id">A</span><span class="name">Control-flow contract — <code>main()</code> follows validate → open/read → transform → write at <code>csvdiff.py:49-108</code>; <code>__init__</code> and <code>run()</code> not overridden.</span><span class="pill pill-pass">PASS</span></div>
+    <div class="bar"><span class="id">B</span><span class="name">Inherited common-args untouchable — only <code>override_flags = ['f']</code> set at <code>csvdiff.py:24</code>, matching <code>csvjoin.py:14</code>.</span><span class="pill pill-pass">PASS</span></div>
+    <div class="bar"><span class="id">C</span><span class="name">STDIN/pipe support — exercised in <code>test_stdin_input</code> at <code>test_csvdiff.py:161-167</code>; CI-smoke-list gap tracked under D10.</span><span class="pill pill-pass">PASS</span></div>
+    <div class="bar"><span class="id">D</span><span class="name">Memory disclosure — epilog states "Both files are read fully into memory… Don't try this on very large files" at <code>csvdiff.py:16-22</code>.</span><span class="pill pill-pass">PASS</span></div>
+    <div class="bar"><span class="id">E</span><span class="name">Determinism — output built from table iteration order; no timestamps, temp paths, or random ordering.</span><span class="pill pill-pass">PASS</span></div>
+    <div class="bar"><span class="id">F</span><span class="name">Backwards compatibility — new tool only; no existing utility's CLI or behavior touched.</span><span class="pill pill-pass">PASS</span></div>
+    <div class="bar"><span class="id">G</span><span class="name">Dependency hygiene — only <code>agate</code> and stdlib (<code>json</code>, <code>sys</code>) imported at <code>csvdiff.py:3-9</code>.</span><span class="pill pill-pass">PASS</span></div>
+    <div class="bar"><span class="id">H</span><span class="name">Cross-platform — no shell-out, no path separators, no platform-specific I/O assumptions.</span><span class="pill pill-pass">PASS</span></div>
+    <div class="bar"><span class="id">I</span><span class="name">Lint &amp; format gates — code respects the 119-char line limit; no obvious flake8/isort violations on inspection.</span><span class="pill pill-pass">PASS</span></div>
+  </div>
+</div></section>
+
+<h3 class="section-title">Appendix — reviewed files</h3>
+<section class="panel"><div class="body appendix"><pre>csvkit/utilities/csvdiff.py
+tests/test_utilities/test_csvdiff.py
+docs/scripts/csvdiff.rst
+man/csvdiff.1
+examples/diff_a.csv
+examples/diff_b.csv
+examples/diff_a_added_col.csv
+examples/diff_a_removed_col.csv
+examples/diff_a_reordered_col.csv
+examples/diff_a_resorted.csv
+examples/diff_a_typed.csv
+examples/diff_a_dup_keys.csv
+examples/diff_composite_a.csv
+examples/diff_composite_b.csv
+pyproject.toml                  (lines 58, 79)
+CHANGELOG.rst                   (top entry)
+docs/cli.rst                    (line 24)
+.github/workflows/ci.yml        (smoke tests — gap)
+AUTHORS.rst                     (contributor — gap)
+
+# Canonical templates consulted
+csvkit/cli.py
+csvkit/utilities/csvjoin.py
+csvkit/utilities/csvclean.py
+csvkit/utilities/csvsort.py
+tests/utils.py
+csvkit/exceptions.py
+csvkit_design_guidelines.md</pre></div></section>
+
+</main>
+</body>
+</html>
