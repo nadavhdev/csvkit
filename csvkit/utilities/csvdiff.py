@@ -104,6 +104,75 @@ def _build_key_index(table, key_names, on_dup, side):
     return index
 
 
+def _compute_positional_diff(left_table, right_table, ignore_names):
+    """Compare rows positionally (no key) when -c/--key is absent.
+
+    Row N of LEFT is compared to row N of RIGHT. Surplus rows on the longer
+    side are classified as removed (LEFT longer) or added (RIGHT longer). The
+    row key in each RowDelta is the 1-based row index.
+    """
+    left_cols = list(left_table.column_names)
+    right_cols = list(right_table.column_names)
+    left_col_set = set(left_cols)
+    right_col_set = set(right_cols)
+
+    schema = SchemaDelta(
+        added=[c for c in right_cols if c not in left_col_set],
+        removed=[c for c in left_cols if c not in right_col_set],
+        reordered=([c for c in left_cols if c in right_col_set]
+                   != [c for c in right_cols if c in left_col_set]),
+        common=[c for c in left_cols if c in right_col_set],
+    )
+
+    compare_cols = [c for c in schema.common if c not in ignore_names]
+    left_rows = list(left_table.rows)
+    right_rows = list(right_table.rows)
+    n_left, n_right = len(left_rows), len(right_rows)
+    compared_count = min(n_left, n_right)
+
+    changed_diffs = []
+    unchanged_count = 0
+    for i in range(compared_count):
+        key = (i + 1,)
+        left_row, right_row = left_rows[i], right_rows[i]
+        field_diffs = {
+            col: (left_row[col], right_row[col])
+            for col in compare_cols
+            if left_row[col] != right_row[col]
+        }
+        if field_diffs:
+            changed_diffs.append(RowDelta(status='changed', key=key, fields=field_diffs))
+        else:
+            unchanged_count += 1
+
+    # Surplus rows show all columns, matching keyed-mode behavior where --ignore
+    # suppresses comparison but does not hide fields from removed/added display.
+    removed_diffs = [
+        RowDelta(
+            status='removed',
+            key=(i + 1,),
+            fields={col: (left_rows[i][col], None) for col in left_cols},
+        )
+        for i in range(compared_count, n_left)
+    ]
+
+    added_diffs = [
+        RowDelta(
+            status='added',
+            key=(i + 1,),
+            fields={col: (None, right_rows[i][col]) for col in right_cols},
+        )
+        for i in range(compared_count, n_right)
+    ]
+
+    return DiffResult(
+        schema=schema,
+        row_diffs=removed_diffs + changed_diffs + added_diffs,
+        unchanged_count=unchanged_count,
+        compared_count=compared_count,
+    )
+
+
 def _compute_diff(left_table, right_table, left_key_names, right_key_names, on_dup, ignore_names):
     """Compute the diff between two agate tables keyed by the given column name lists.
 
@@ -188,6 +257,8 @@ class CSVDiff(CSVKitUtility):
         'Note that csvdiff reads both inputs fully into memory. '
         'With type inference (default), "1" and "1.0" compare equal; use -I to compare raw strings. '
         'Exit codes: 0 = equivalent, 1 = differences found, 2 = usage or parse error. '
+        'Without -c/--key, rows are compared positionally (row N vs row N). '
+        'A re-sorted file will produce wide spurious diffs in positional mode — use -c to compare by row identity. '
         'With --on-dup=all, duplicate keys on both sides produce a Cartesian product of comparisons, '
         'which can be O(n*m) per key with large duplicate groups — use with caution. '
         '(Experimental - interface may change.)'
@@ -239,9 +310,6 @@ class CSVDiff(CSVKitUtility):
         if left_path == '-' and right_path == '-':
             self.argparser.error('Stdin ("-") may only be used for one input.')
 
-        if not self.args.key:
-            self.argparser.error('A key column is required. Use -c/--key to specify it.')
-
         left_file = self._open_input_file(left_path)
         right_file = self._open_input_file(right_path, opened=(left_path == '-'))
 
@@ -251,20 +319,22 @@ class CSVDiff(CSVKitUtility):
         left_table = self._read_table(left_file, 'LEFT', left_path, sniff_limit, column_types)
         right_table = self._read_table(right_file, 'RIGHT', right_path, sniff_limit, column_types)
 
-        left_key_names = self._resolve_key_names(left_table, 'LEFT')
-        right_key_names = self._resolve_key_names(right_table, 'RIGHT')
-
         ignore_names = self._resolve_ignore_cols(left_table, right_table)
 
-        try:
-            result = _compute_diff(
-                left_table, right_table, left_key_names, right_key_names,
-                self.args.on_dup, ignore_names,
-            )
-        except DuplicateKeyError as e:
-            self.argparser.error(str(e))
-
-        render_human(result, left_key_names, self.output_file)
+        if self.args.key:
+            left_key_names = self._resolve_key_names(left_table, 'LEFT')
+            right_key_names = self._resolve_key_names(right_table, 'RIGHT')
+            try:
+                result = _compute_diff(
+                    left_table, right_table, left_key_names, right_key_names,
+                    self.args.on_dup, ignore_names,
+                )
+            except DuplicateKeyError as e:
+                self.argparser.error(str(e))
+            render_human(result, left_key_names, self.output_file)
+        else:
+            result = _compute_positional_diff(left_table, right_table, ignore_names)
+            render_human(result, ['row'], self.output_file)
 
         if result.row_diffs:
             sys.exit(1)

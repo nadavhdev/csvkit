@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import agate
 
-from csvkit.utilities.csvdiff import (CSVDiff, DuplicateKeyError, _build_key_index, _compute_diff, _key_display,
-                                      launch_new_instance)
+from csvkit.utilities.csvdiff import (CSVDiff, DuplicateKeyError, _build_key_index, _compute_diff,
+                                      _compute_positional_diff, _key_display, launch_new_instance)
 from tests.utils import CSVKitTestCase, EmptyFileTests, stdin_as_string
 
 
@@ -64,14 +64,6 @@ class TestCSVDiff(CSVKitTestCase, EmptyFileTests):
     def test_exit_1_when_differences(self):
         code = self._exit_code_for(['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id'])
         self.assertEqual(code, 1)
-
-    def test_exit_2_missing_key_flag(self):
-        self.assertError(
-            launch_new_instance,
-            ['examples/diff_a.csv', 'examples/diff_b.csv'],
-            'A key column is required. Use -c/--key to specify it.',
-            args=[],
-        )
 
     def test_exit_2_key_not_in_left(self):
         f = io.StringIO()
@@ -805,6 +797,196 @@ class TestCSVDiffEngine(unittest.TestCase):
 
     def test_key_display_composite_key_none_value(self):
         self.assertEqual(_key_display(['k1', 'k2'], (None, '1')), 'key=(,1)')
+
+    # ── _compute_positional_diff unit tests ────────────────────────────────
+
+    def test_positional_equal_length_identical_no_diffs(self):
+        left = agate.Table([('alice', '10'), ('bob', '20')], column_names=['name', 'score'])
+        right = agate.Table([('alice', '10'), ('bob', '20')], column_names=['name', 'score'])
+        result = _compute_positional_diff(left, right, set())
+        self.assertEqual(result.row_diffs, [])
+        self.assertEqual(result.unchanged_count, 2)
+        self.assertEqual(result.compared_count, 2)
+
+    def test_positional_equal_length_with_change(self):
+        left = agate.Table([('alice', '10'), ('bob', '20')], column_names=['name', 'score'])
+        right = agate.Table([('alice', '10'), ('bob', '99')], column_names=['name', 'score'])
+        result = _compute_positional_diff(left, right, set())
+        self.assertEqual(len(result.row_diffs), 1)
+        self.assertEqual(result.row_diffs[0].status, 'changed')
+        self.assertEqual(result.row_diffs[0].key, (2,))
+
+    def test_positional_row_key_is_1based(self):
+        left = agate.Table([('a', 'x')], column_names=['name', 'val'])
+        right = agate.Table([('a', 'y')], column_names=['name', 'val'])
+        result = _compute_positional_diff(left, right, set())
+        self.assertEqual(result.row_diffs[0].key, (1,))
+
+    def test_positional_left_longer_surplus_is_removed(self):
+        left = agate.Table([('a', '1'), ('b', '2'), ('c', '3')], column_names=['name', 'score'])
+        right = agate.Table([('a', '1'), ('b', '2')], column_names=['name', 'score'])
+        result = _compute_positional_diff(left, right, set())
+        removed = [d for d in result.row_diffs if d.status == 'removed']
+        self.assertEqual(len(removed), 1)
+        self.assertEqual(removed[0].key, (3,))
+        self.assertEqual(removed[0].fields['name'], ('c', None))
+
+    def test_positional_right_longer_surplus_is_added(self):
+        left = agate.Table([('a', '1'), ('b', '2')], column_names=['name', 'score'])
+        right = agate.Table([('a', '1'), ('b', '2'), ('c', '3')], column_names=['name', 'score'])
+        result = _compute_positional_diff(left, right, set())
+        added = [d for d in result.row_diffs if d.status == 'added']
+        self.assertEqual(len(added), 1)
+        self.assertEqual(added[0].key, (3,))
+        self.assertEqual(added[0].fields['name'], (None, 'c'))
+
+    def test_positional_both_empty_no_diffs(self):
+        left = agate.Table([], column_names=['name', 'score'])
+        right = agate.Table([], column_names=['name', 'score'])
+        result = _compute_positional_diff(left, right, set())
+        self.assertEqual(result.row_diffs, [])
+        self.assertEqual(result.compared_count, 0)
+        self.assertEqual(result.unchanged_count, 0)
+
+    def test_positional_ignore_names_suppresses_field_diff(self):
+        left = agate.Table([('alice', '10')], column_names=['name', 'score'])
+        right = agate.Table([('alice', '99')], column_names=['name', 'score'])
+        result = _compute_positional_diff(left, right, {'score'})
+        self.assertEqual(result.row_diffs, [])
+        self.assertEqual(result.unchanged_count, 1)
+
+    def test_positional_schema_delta_computed(self):
+        left = agate.Table([('a',)], column_names=['name'])
+        right = agate.Table([('a', '1')], column_names=['name', 'extra'])
+        result = _compute_positional_diff(left, right, set())
+        self.assertEqual(result.schema.added, ['extra'])
+        self.assertEqual(result.schema.removed, [])
+
+    def test_positional_ordering_changed_rows_in_position_order(self):
+        """Changed rows appear in ascending position order within the changed category."""
+        left = agate.Table([('a', '1'), ('b', '2'), ('c', '3')], column_names=['k', 'v'])
+        right = agate.Table([('a', '9'), ('b', '2'), ('c', '4')], column_names=['k', 'v'])
+        result = _compute_positional_diff(left, right, set())
+        statuses = [d.status for d in result.row_diffs]
+        self.assertEqual(statuses, ['changed', 'changed'])
+        self.assertEqual(result.row_diffs[0].key, (1,))
+        self.assertEqual(result.row_diffs[1].key, (3,))
+
+
+class TestCSVDiffPositional(_CSVDiffOutputMixin, CSVKitTestCase):
+    """Tests for no-key positional row-by-row comparison (task-03)."""
+    Utility = CSVDiff
+
+    # ── Exit code contract ────────────────────────────────────────────────
+
+    def test_positional_equal_length_identical_exits_0(self):
+        code = self._exit_code_for(['examples/diff_pos_a.csv', 'examples/diff_pos_a.csv'])
+        self.assertEqual(code, 0)
+
+    def test_positional_equal_length_with_change_exits_1(self):
+        code = self._exit_code_for(['examples/diff_pos_a.csv', 'examples/diff_pos_b.csv'])
+        self.assertEqual(code, 1)
+
+    def test_positional_left_longer_exits_1(self):
+        code = self._exit_code_for(['examples/diff_pos_a.csv', 'examples/diff_pos_short.csv'])
+        self.assertEqual(code, 1)
+
+    def test_positional_right_longer_exits_1(self):
+        code = self._exit_code_for(['examples/diff_pos_short.csv', 'examples/diff_pos_a.csv'])
+        self.assertEqual(code, 1)
+
+    def test_positional_both_empty_exits_0(self):
+        code = self._exit_code_for(['examples/diff_pos_empty.csv', 'examples/diff_pos_empty.csv'])
+        self.assertEqual(code, 0)
+
+    # ── Row-index key format ──────────────────────────────────────────────
+
+    def test_positional_changed_row_key_is_row_index(self):
+        """Changed row key slot must show row=N (1-based)."""
+        output = self.get_output(['examples/diff_pos_a.csv', 'examples/diff_pos_b.csv'])
+        changed_lines = [ln for ln in output.splitlines() if ln.startswith('~')]
+        self.assertEqual(len(changed_lines), 1)
+        self.assertIn('row=2', changed_lines[0])
+
+    def test_positional_removed_row_key_is_row_index(self):
+        """Surplus LEFT row's key slot must show row=N (1-based)."""
+        output = self.get_output(['examples/diff_pos_a.csv', 'examples/diff_pos_short.csv'])
+        removed_lines = [ln for ln in output.splitlines() if ln.startswith('-')]
+        self.assertEqual(len(removed_lines), 1)
+        self.assertIn('row=3', removed_lines[0])
+
+    def test_positional_added_row_key_is_row_index(self):
+        """Surplus RIGHT row's key slot must show row=N (1-based)."""
+        output = self.get_output(['examples/diff_pos_short.csv', 'examples/diff_pos_a.csv'])
+        added_lines = [ln for ln in output.splitlines() if ln.startswith('+')]
+        self.assertEqual(len(added_lines), 1)
+        self.assertIn('row=3', added_lines[0])
+
+    # ── Field values in output ────────────────────────────────────────────
+
+    def test_positional_changed_row_shows_field_delta(self):
+        output = self.get_output(['examples/diff_pos_a.csv', 'examples/diff_pos_b.csv'])
+        changed_lines = [ln for ln in output.splitlines() if ln.startswith('~')]
+        self.assertIn('score: 20 -> 99', changed_lines[0])
+
+    def test_positional_removed_row_shows_field_values(self):
+        output = self.get_output(['examples/diff_pos_a.csv', 'examples/diff_pos_short.csv'])
+        removed_lines = [ln for ln in output.splitlines() if ln.startswith('-')]
+        self.assertIn('name=carol', removed_lines[0])
+        self.assertIn('score=30', removed_lines[0])
+
+    def test_positional_added_row_shows_field_values(self):
+        output = self.get_output(['examples/diff_pos_short.csv', 'examples/diff_pos_a.csv'])
+        added_lines = [ln for ln in output.splitlines() if ln.startswith('+')]
+        self.assertIn('name=carol', added_lines[0])
+        self.assertIn('score=30', added_lines[0])
+
+    # ── Headline counts ───────────────────────────────────────────────────
+
+    def test_positional_left_longer_headline(self):
+        output = self.get_output(['examples/diff_pos_a.csv', 'examples/diff_pos_short.csv'])
+        first_line = output.splitlines()[0]
+        self.assertEqual(first_line, '0 changed, 0 added, 1 removed (of 2 rows compared)')
+
+    def test_positional_right_longer_headline(self):
+        output = self.get_output(['examples/diff_pos_short.csv', 'examples/diff_pos_a.csv'])
+        first_line = output.splitlines()[0]
+        self.assertEqual(first_line, '0 changed, 1 added, 0 removed (of 2 rows compared)')
+
+    def test_positional_equal_with_change_headline(self):
+        output = self.get_output(['examples/diff_pos_a.csv', 'examples/diff_pos_b.csv'])
+        first_line = output.splitlines()[0]
+        self.assertEqual(first_line, '1 changed, 0 added, 0 removed (of 3 rows compared)')
+
+    # ── Warning text ──────────────────────────────────────────────────────
+
+    def test_positional_warning_in_epilog(self):
+        """Epilog must warn about positional mode's re-sorted-file footgun."""
+        self.assertIn('positional', CSVDiff.epilog)
+        self.assertIn('-c', CSVDiff.epilog)
+
+    def test_positional_warning_in_help_text(self):
+        output_file = io.TextIOWrapper(io.BytesIO(), encoding='utf-8', newline='', write_through=True)
+        utility = CSVDiff(['examples/diff_pos_a.csv', 'examples/diff_pos_b.csv'], output_file)
+        help_text = utility.argparser.format_help()
+        self.assertIn('positional', help_text)
+        self.assertIn('re-sorted', help_text)
+
+    def test_positional_with_ignore_suppresses_change(self):
+        """--ignore works in positional mode: suppressed column does not trigger a diff."""
+        code = self._exit_code_for(
+            ['examples/diff_pos_a.csv', 'examples/diff_pos_b.csv', '--ignore', 'score'])
+        # diff_pos_a row 2: bob/20; diff_pos_b row 2: bob/99 — only score differs; suppressed → exit 0
+        self.assertEqual(code, 0)
+
+    def test_positional_ignore_does_not_hide_fields_in_surplus_rows(self):
+        """--ignore suppresses comparison but surplus removed/added rows still display the ignored column."""
+        output = self.get_output(
+            ['examples/diff_pos_a.csv', 'examples/diff_pos_short.csv', '--ignore', 'score'])
+        removed_lines = [ln for ln in output.splitlines() if ln.startswith('-')]
+        self.assertEqual(len(removed_lines), 1)
+        # score is ignored for comparison but must still appear in the removed row display
+        self.assertIn('score=30', removed_lines[0])
 
 
 class TestBuildKeyIndex(unittest.TestCase):
