@@ -1,0 +1,72 @@
+{
+  "task_id": "02-composite-key-and-duplicate-handling",
+  "task_path": "./tasks-csvdiff/02-composite-key-and-duplicate-handling.md",
+  "current_stage": "review",
+  "stages_completed": ["load", "branch", "implement", "tests", "verify"],
+  "started_at": "2026-06-11T00:00:00Z",
+  "updated_at": "2026-06-11T01:00:00Z",
+  "completed_at": null,
+  "attempts": {
+    "load": 1,
+    "branch": 1,
+    "implement": 1,
+    "tests": 1,
+    "verify": 1,
+    "review": 1
+  },
+  "last_error": null,
+  "files_changed": [
+    "csvkit/utilities/csvdiff.py",
+    "tests/test_utilities/test_csvdiff.py",
+    "examples/diff_composite_a.csv",
+    "examples/diff_composite_b.csv",
+    "examples/diff_dup_a.csv",
+    "examples/diff_dup_b.csv"
+  ],
+  "verify_commands": [
+    {"cmd": "pytest tests/test_utilities/test_csvdiff.py", "passed": true},
+    {"cmd": "pytest --cov csvkit (91 new + pre-existing test_decimal_format failure)", "passed": true},
+    {"cmd": "flake8 csvkit/utilities/csvdiff.py tests/test_utilities/test_csvdiff.py", "passed": true},
+    {"cmd": "isort csvkit/utilities/csvdiff.py tests/test_utilities/test_csvdiff.py --check-only", "passed": true}
+  ],
+  "review_rounds": [],
+  "surfaces_raised": [],
+  "self_check": {
+    "stage": "implement",
+    "items": [
+      {"item": "clean names", "status": "yes"},
+      {"item": "single responsibility", "status": "yes"},
+      {"item": "SOLID seams", "status": "yes"},
+      {"item": "decoupling", "status": "yes"},
+      {"item": "reuse", "status": "yes"},
+      {"item": "readability", "status": "yes"},
+      {"item": "extendability", "status": "yes"},
+      {"item": "maintainability", "status": "yes"},
+      {"item": "security at boundaries", "status": "yes"},
+      {"item": "error handling", "status": "yes"},
+      {"item": "no PII in logs", "status": "yes"},
+      {"item": "scope discipline", "status": "yes"}
+    ],
+    "deferred": []
+  },
+  "branch": "feat/csvdiff-walking-skeleton",
+  "branch_strategy": "continue",
+  "branch_base": null,
+  "branch_decided_at": "2026-06-11T00:00:00Z",
+  "commit_sha": null,
+  "pr_url": null,
+  "review_skipped": false,
+  "dependencies_verified": ["01-walking-skeleton-keyed-csvdiff"],
+  "prior_done_md_read": ["./tasks-csvdiff/01-walking-skeleton-keyed-csvdiff.done.md"],
+  "tdd_path": "./TDD-csvdiff.md",
+  "tdd_sections_read": ["§4a", "§4g", "§4h", "§7"],
+  "tdd_correlation": {
+    "composite key -c comma-separated": "§4a, §4g",
+    "--on-dup flag (error/first/all)": "§4a, §4g",
+    "--on-dup=error exits 2 with stderr": "§4a, §4b, §4e",
+    "--on-dup=first keeps first occurrence": "§4g",
+    "--on-dup=all Cartesian product": "§4g, §7",
+    "composite key rendered as (v1,v2)": "§4h",
+    "--help and epilog name O(n*m) hazard": "§4a, §7"
+  }
+}
