@@ -13,6 +13,16 @@ from csvkit.exceptions import ColumnIdentifierError
 _PARSE_ERRORS = (csv.Error, UnicodeDecodeError, agate.exceptions.FieldSizeLimitError)
 
 
+class DuplicateKeyError(Exception):
+    """Raised when on_dup='error' and a key tuple appears more than once in a file."""
+    def __init__(self, side, key_names, key_tuple, first_idx, dup_idx):
+        key_str = _key_display(key_names, key_tuple)
+        super().__init__(
+            '{}: duplicate key {} first seen at row {}, repeated at row {}'.format(
+                side, key_str, first_idx + 1, dup_idx + 1)
+        )
+
+
 @dataclass
 class SchemaDelta:
     added: list
@@ -36,16 +46,20 @@ class DiffResult:
     compared_count: int
 
 
-def _key_display(key_name, key_tuple):
-    val = key_tuple[0]
-    return '{}={}'.format(key_name, '' if val is None else str(val))
+def _key_display(key_names, key_tuple):
+    """Format a key tuple for human output. Single key: name=val. Composite: key=(v1,v2)."""
+    if len(key_names) == 1:
+        val = key_tuple[0]
+        return '{}={}'.format(key_names[0], '' if val is None else str(val))
+    parts = ','.join('' if v is None else str(v) for v in key_tuple)
+    return 'key=({})'.format(parts)
 
 
 def _fmt(val):
     return '' if val is None else str(val)
 
 
-def render_human(result, key_name, output_file):
+def render_human(result, key_names, output_file):
     changed = [d for d in result.row_diffs if d.status == 'changed']
     added = [d for d in result.row_diffs if d.status == 'added']
     removed = [d for d in result.row_diffs if d.status == 'removed']
@@ -55,7 +69,7 @@ def render_human(result, key_name, output_file):
     ))
 
     for delta in result.row_diffs:
-        key_part = _key_display(key_name, delta.key)
+        key_part = _key_display(key_names, delta.key)
         if delta.status == 'removed':
             field_parts = ['{}={}'.format(col, _fmt(left)) for col, (left, _) in delta.fields.items()]
             output_file.write('- {}   {}\n'.format(key_part, '  '.join(field_parts)))
@@ -68,34 +82,61 @@ def render_human(result, key_name, output_file):
             output_file.write('+ {}   {}\n'.format(key_part, '  '.join(field_parts)))
 
 
-def _compute_diff(left_table, right_table, left_key_name, right_key_name, ignore_names):
+def _build_key_index(table, key_names, on_dup, side):
+    """Build dict[key_tuple -> list[row_index]], applying the on_dup policy.
+
+    Raises DuplicateKeyError immediately if on_dup='error' and a duplicate is found.
+    With on_dup='first', only the first occurrence per key is stored.
+    With on_dup='all', all occurrences are stored.
+    """
+    index = {}
+    for i, row in enumerate(table.rows):
+        key = tuple(row[name] for name in key_names)
+        if key in index:
+            if on_dup == 'error':
+                raise DuplicateKeyError(side, key_names, key, index[key][0], i)
+            elif on_dup == 'first':
+                continue
+            else:  # 'all'
+                index[key].append(i)
+        else:
+            index[key] = [i]
+    return index
+
+
+def _compute_diff(left_table, right_table, left_key_names, right_key_names, on_dup, ignore_names):
+    """Compute the diff between two agate tables keyed by the given column name lists.
+
+    left_key_names / right_key_names: lists of resolved column names forming the composite key.
+    on_dup: 'error' | 'first' | 'all' — controls duplicate-key behavior.
+    ignore_names: set of column names to exclude from row comparison.
+
+    Raises DuplicateKeyError (exit-2 class) when on_dup='error' and duplicates are found.
+    """
     left_cols = list(left_table.column_names)
     right_cols = list(right_table.column_names)
-    left_set = set(left_cols)
-    right_set = set(right_cols)
+    left_col_set = set(left_cols)
+    right_col_set = set(right_cols)
 
     schema = SchemaDelta(
-        added=[c for c in right_cols if c not in left_set],
-        removed=[c for c in left_cols if c not in right_set],
-        reordered=[c for c in left_cols if c in right_set] != [c for c in right_cols if c in left_set],
-        common=[c for c in left_cols if c in right_set],
+        added=[c for c in right_cols if c not in left_col_set],
+        removed=[c for c in left_cols if c not in right_col_set],
+        reordered=[c for c in left_cols if c in right_col_set] != [c for c in right_cols if c in left_col_set],
+        common=[c for c in left_cols if c in right_col_set],
     )
 
-    compare_cols = [c for c in schema.common if c != left_key_name and c not in ignore_names]
+    all_key_names = set(left_key_names) | set(right_key_names)
+    compare_cols = [c for c in schema.common if c not in all_key_names and c not in ignore_names]
 
-    left_key_index = {}
-    for i, row in enumerate(left_table.rows):
-        key = (row[left_key_name],)
-        left_key_index[key] = i
+    left_non_key_cols = [c for c in left_cols if c not in all_key_names]
+    right_non_key_cols = [c for c in right_cols if c not in all_key_names]
 
-    right_key_index = {}
-    for i, row in enumerate(right_table.rows):
-        key = (row[right_key_name],)
-        right_key_index[key] = i
+    left_key_index = _build_key_index(left_table, left_key_names, on_dup, 'LEFT')
+    right_key_index = _build_key_index(right_table, right_key_names, on_dup, 'RIGHT')
 
     left_keys = list(left_key_index)
     right_keys = list(right_key_index)
-    right_key_set = set(right_key_index)
+    right_keys_present = set(right_key_index)
 
     removed_diffs = []
     changed_diffs = []
@@ -103,33 +144,35 @@ def _compute_diff(left_table, right_table, left_key_name, right_key_name, ignore
     compared_count = 0
 
     for key in left_keys:
-        if key in right_key_set:
-            compared_count += 1
-            left_row = left_table.rows[left_key_index[key]]
-            right_row = right_table.rows[right_key_index[key]]
-            field_diffs = {
-                col: (left_row[col], right_row[col])
-                for col in compare_cols
-                if left_row[col] != right_row[col]
-            }
-            if field_diffs:
-                changed_diffs.append(RowDelta(status='changed', key=key, fields=field_diffs))
-            else:
-                unchanged_count += 1
+        if key in right_keys_present:
+            for li in left_key_index[key]:
+                for ri in right_key_index[key]:
+                    compared_count += 1
+                    left_row = left_table.rows[li]
+                    right_row = right_table.rows[ri]
+                    field_diffs = {
+                        col: (left_row[col], right_row[col])
+                        for col in compare_cols
+                        if left_row[col] != right_row[col]
+                    }
+                    if field_diffs:
+                        changed_diffs.append(RowDelta(status='changed', key=key, fields=field_diffs))
+                    else:
+                        unchanged_count += 1
         else:
-            left_row = left_table.rows[left_key_index[key]]
-            non_key_cols = [c for c in left_cols if c != left_key_name]
-            fields = {col: (left_row[col], None) for col in non_key_cols}
-            removed_diffs.append(RowDelta(status='removed', key=key, fields=fields))
+            for li in left_key_index[key]:
+                left_row = left_table.rows[li]
+                fields = {col: (left_row[col], None) for col in left_non_key_cols}
+                removed_diffs.append(RowDelta(status='removed', key=key, fields=fields))
 
     added_diffs = []
-    left_key_set = set(left_key_index)
+    left_keys_present = set(left_key_index)
     for key in right_keys:
-        if key not in left_key_set:
-            right_row = right_table.rows[right_key_index[key]]
-            non_key_cols = [c for c in right_cols if c != right_key_name]
-            fields = {col: (None, right_row[col]) for col in non_key_cols}
-            added_diffs.append(RowDelta(status='added', key=key, fields=fields))
+        if key not in left_keys_present:
+            for ri in right_key_index[key]:
+                right_row = right_table.rows[ri]
+                fields = {col: (None, right_row[col]) for col in right_non_key_cols}
+                added_diffs.append(RowDelta(status='added', key=key, fields=fields))
 
     return DiffResult(
         schema=schema,
@@ -145,7 +188,9 @@ class CSVDiff(CSVKitUtility):
         'Note that csvdiff reads both inputs fully into memory. '
         'With type inference (default), "1" and "1.0" compare equal; use -I to compare raw strings. '
         'Exit codes: 0 = equivalent, 1 = differences found, 2 = usage or parse error. '
-        '(Experimental — interface may change.)'
+        'With --on-dup=all, duplicate keys on both sides produce a Cartesian product of comparisons, '
+        'which can be O(n*m) per key with large duplicate groups — use with caution. '
+        '(Experimental - interface may change.)'
     )
     override_flags = ['f']
 
@@ -155,7 +200,16 @@ class CSVDiff(CSVKitUtility):
             help='The two CSV files to compare. Use "-" for stdin (at most once).')
         self.argparser.add_argument(
             '-c', '--key', dest='key',
-            help='Column name or 1-based index identifying each row uniquely.')
+            help='Column name(s) or 1-based index(es) identifying each row uniquely. '
+                 'Comma-separated for composite keys (e.g. -c "order_id,line_no").')
+        self.argparser.add_argument(
+            '--on-dup', dest='on_dup', default='error',
+            choices=['error', 'first', 'all'],
+            help='Behavior when --key is not unique within a file. '
+                 '"error" (default): exit 2 naming the duplicate key and rows. '
+                 '"first": keep only the first occurrence of each key. '
+                 '"all": compare the Cartesian product of all matching duplicate rows '
+                 '(warning: O(n*m) per key; large duplicate groups can produce enormous output).')
         self.argparser.add_argument(
             '--ignore', dest='ignore', default='',
             help='Comma-separated column names or indices to exclude from row comparison.')
@@ -197,26 +251,20 @@ class CSVDiff(CSVKitUtility):
         left_table = self._read_table(left_file, 'LEFT', left_path, sniff_limit, column_types)
         right_table = self._read_table(right_file, 'RIGHT', right_path, sniff_limit, column_types)
 
-        try:
-            left_key_idx = match_column_identifier(
-                left_table.column_names, self.args.key, self.get_column_offset())
-        except ColumnIdentifierError as e:
-            self.argparser.error('LEFT: {}'.format(e))
-
-        try:
-            right_key_idx = match_column_identifier(
-                right_table.column_names, self.args.key, self.get_column_offset())
-        except ColumnIdentifierError as e:
-            self.argparser.error('RIGHT: {}'.format(e))
-
-        left_key_name = left_table.column_names[left_key_idx]
-        right_key_name = right_table.column_names[right_key_idx]
+        left_key_names = self._resolve_key_names(left_table, 'LEFT')
+        right_key_names = self._resolve_key_names(right_table, 'RIGHT')
 
         ignore_names = self._resolve_ignore_cols(left_table, right_table)
 
-        result = _compute_diff(left_table, right_table, left_key_name, right_key_name, ignore_names)
+        try:
+            result = _compute_diff(
+                left_table, right_table, left_key_names, right_key_names,
+                self.args.on_dup, ignore_names,
+            )
+        except DuplicateKeyError as e:
+            self.argparser.error(str(e))
 
-        render_human(result, left_key_name, self.output_file)
+        render_human(result, left_key_names, self.output_file)
 
         if result.row_diffs:
             sys.exit(1)
@@ -234,6 +282,23 @@ class CSVDiff(CSVKitUtility):
             return table
         except _PARSE_ERRORS as e:
             self.argparser.error('{} ({}): {}'.format(label, path, e))
+
+    def _resolve_key_names(self, table, side):
+        """Parse the -c/--key value as comma-separated identifiers and resolve each to a column name."""
+        offset = self.get_column_offset()
+        key_names = []
+        for part in self.args.key.split(','):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                idx = match_column_identifier(table.column_names, part, offset)
+                key_names.append(table.column_names[idx])
+            except ColumnIdentifierError as e:
+                self.argparser.error('{}: {}'.format(side, e))
+        if not key_names:
+            self.argparser.error('A key column is required. Use -c/--key to specify it.')
+        return key_names
 
     def _resolve_ignore_cols(self, left_table, right_table):
         ignore_names = set()
