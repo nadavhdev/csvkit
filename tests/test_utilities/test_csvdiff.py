@@ -7,8 +7,9 @@ from unittest.mock import patch
 
 import agate
 
-from csvkit.utilities.csvdiff import (CSVDiff, DuplicateKeyError, _build_key_index, _compute_diff,
-                                      _compute_positional_diff, _key_display, launch_new_instance)
+from csvkit.utilities.csvdiff import (CSVDiff, DiffResult, DuplicateKeyError, SchemaDelta, _build_key_index,
+                                      _compute_diff, _compute_positional_diff, _compute_schema_delta, _key_display,
+                                      _schema_changed, launch_new_instance, render_human)
 from tests.utils import CSVKitTestCase, EmptyFileTests, stdin_as_string
 
 
@@ -872,6 +873,94 @@ class TestCSVDiffEngine(unittest.TestCase):
         self.assertEqual(result.row_diffs[0].key, (1,))
         self.assertEqual(result.row_diffs[1].key, (3,))
 
+    # ── _compute_schema_delta / _schema_changed unit tests ─────────────────
+
+    def test_compute_schema_delta_added_removed(self):
+        delta = _compute_schema_delta(['id', 'name'], ['id', 'value'])
+        self.assertEqual(delta.added, ['value'])      # in RIGHT order
+        self.assertEqual(delta.removed, ['name'])      # in LEFT order
+        self.assertEqual(delta.common, ['id'])
+        self.assertFalse(delta.reordered)
+
+    def test_compute_schema_delta_added_in_right_order(self):
+        """Added columns are listed in RIGHT's column order, not sorted."""
+        delta = _compute_schema_delta(['id'], ['id', 'zeta', 'alpha'])
+        self.assertEqual(delta.added, ['zeta', 'alpha'])
+
+    def test_compute_schema_delta_removed_in_left_order(self):
+        """Removed columns are listed in LEFT's column order, not sorted."""
+        delta = _compute_schema_delta(['id', 'zeta', 'alpha'], ['id'])
+        self.assertEqual(delta.removed, ['zeta', 'alpha'])
+
+    def test_compute_schema_delta_reordered(self):
+        delta = _compute_schema_delta(['id', 'name', 'price'], ['id', 'price', 'name'])
+        self.assertTrue(delta.reordered)
+        self.assertEqual(delta.added, [])
+        self.assertEqual(delta.removed, [])
+
+    def test_compute_schema_delta_identical_not_reordered(self):
+        delta = _compute_schema_delta(['id', 'name'], ['id', 'name'])
+        self.assertFalse(delta.reordered)
+        self.assertEqual(delta.added, [])
+        self.assertEqual(delta.removed, [])
+
+    def test_compute_schema_delta_reorder_ignores_non_common_columns(self):
+        """Adding/removing a column does not by itself count as a reorder of the common set."""
+        delta = _compute_schema_delta(['id', 'name', 'price'], ['id', 'name'])
+        self.assertEqual(delta.removed, ['price'])
+        self.assertFalse(delta.reordered)
+
+    def test_schema_changed_true_on_added(self):
+        self.assertTrue(_schema_changed(SchemaDelta(added=['x'], removed=[], reordered=False, common=[])))
+
+    def test_schema_changed_true_on_removed(self):
+        self.assertTrue(_schema_changed(SchemaDelta(added=[], removed=['x'], reordered=False, common=[])))
+
+    def test_schema_changed_true_on_reordered(self):
+        self.assertTrue(_schema_changed(SchemaDelta(added=[], removed=[], reordered=True, common=[])))
+
+    def test_schema_changed_false_when_identical(self):
+        self.assertFalse(_schema_changed(SchemaDelta(added=[], removed=[], reordered=False, common=['id'])))
+
+    def test_added_column_excluded_from_changed_row_fields(self):
+        """A column present only in RIGHT is never compared, so it never appears in a changed row's fields."""
+        left = agate.Table([('1', 'old')], column_names=['id', 'name'])
+        right = agate.Table([('1', 'new', 'west')], column_names=['id', 'name', 'region'])
+        result = _compute_diff(left, right, ['id'], ['id'], 'error', set())
+        self.assertEqual(result.schema.added, ['region'])
+        delta = result.row_diffs[0]
+        self.assertEqual(delta.status, 'changed')
+        self.assertIn('name', delta.fields)
+        self.assertNotIn('region', delta.fields)
+
+    # ── render_human schema banner unit tests ──────────────────────────────
+
+    def _render(self, schema, show_schema):
+        result = DiffResult(schema=schema, row_diffs=[], unchanged_count=0, compared_count=0)
+        buf = io.StringIO()
+        render_human(result, ['id'], buf, show_schema=show_schema)
+        return buf.getvalue()
+
+    def test_render_human_emits_banner_when_show_schema(self):
+        out = self._render(SchemaDelta(added=['region'], removed=[], reordered=False, common=['id']), True)
+        self.assertTrue(out.startswith('! schema changed:'))
+        self.assertIn('added: region', out)
+
+    def test_render_human_no_banner_when_show_schema_false(self):
+        out = self._render(SchemaDelta(added=['region'], removed=[], reordered=False, common=['id']), False)
+        self.assertNotIn('! schema changed', out)
+
+    def test_render_human_no_banner_when_schema_unchanged(self):
+        out = self._render(SchemaDelta(added=[], removed=[], reordered=False, common=['id']), True)
+        self.assertNotIn('! schema changed', out)
+
+    def test_render_human_banner_lists_all_three_deltas(self):
+        out = self._render(
+            SchemaDelta(added=['region'], removed=['legacy'], reordered=True, common=['id']), True)
+        self.assertIn('added: region', out)
+        self.assertIn('removed: legacy', out)
+        self.assertIn('reordered: true', out)
+
 
 class TestCSVDiffPositional(_CSVDiffOutputMixin, CSVKitTestCase):
     """Tests for no-key positional row-by-row comparison (task-03)."""
@@ -1020,3 +1109,140 @@ class TestBuildKeyIndex(unittest.TestCase):
         table = agate.Table([('A', 'X', 'v')], column_names=['k1', 'k2', 'val'])
         index = _build_key_index(table, ['k1', 'k2'], 'error', 'LEFT')
         self.assertIn(('A', 'X'), index)
+
+
+class TestCSVDiffSchema(_CSVDiffOutputMixin, CSVKitTestCase):
+    """CLI-level tests for schema-drift detection (task-04)."""
+    Utility = CSVDiff
+
+    BASE = 'examples/diff_schema_base.csv'
+    ADDED = 'examples/diff_schema_added.csv'
+    ADDED_CHANGED = 'examples/diff_schema_added_changed.csv'
+    REORDERED = 'examples/diff_schema_reordered.csv'
+    ALL_RIGHT = 'examples/diff_schema_all_right.csv'
+    RENAME_L = 'examples/diff_schema_rename_left.csv'
+    RENAME_R = 'examples/diff_schema_rename_right.csv'
+
+    def _row_diff_lines(self, output):
+        return [ln for ln in output.splitlines() if ln[:1] in ('-', '~', '+')]
+
+    # ── Identical schema: no banner, unchanged behavior ───────────────────
+
+    def test_identical_schema_emits_no_banner(self):
+        output = self.get_output([self.BASE, self.BASE, '-c', 'id'])
+        self.assertNotIn('! schema changed', output)
+
+    def test_identical_schema_exits_0(self):
+        code = self._exit_code_for([self.BASE, self.BASE, '-c', 'id'])
+        self.assertEqual(code, 0)
+
+    def test_identical_schema_row_diff_unchanged(self):
+        """With identical columns the row-diff section matches the pre-schema behavior."""
+        output = self.get_output(['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id'])
+        self.assertNotIn('! schema changed', output)
+        self.assertEqual(output.splitlines()[0], '1 changed, 1 added, 1 removed (of 2 rows compared)')
+
+    # ── Added column (criterion 2) ────────────────────────────────────────
+
+    def test_added_column_banner_begins_output(self):
+        output = self.get_output([self.BASE, self.ADDED, '-c', 'id'])
+        self.assertTrue(output.startswith('! schema changed:'))
+        self.assertIn('added: region', output)
+
+    def test_added_column_not_reported_in_row_diffs(self):
+        """The added column appears only in the banner, never as per-row noise."""
+        # ADDED_CHANGED differs from BASE on a common column (price) AND adds `region`,
+        # so a real '~' changed line exists — the added column must not leak into it.
+        output = self.get_output([self.BASE, self.ADDED_CHANGED, '-c', 'id'])
+        row_lines = self._row_diff_lines(output)
+        self.assertTrue(any(ln.startswith('~') for ln in row_lines))
+        for line in row_lines:
+            self.assertNotIn('region', line)
+
+    def test_added_column_exits_1(self):
+        code = self._exit_code_for([self.BASE, self.ADDED, '-c', 'id'])
+        self.assertEqual(code, 1)
+
+    # ── Removed column (criterion 3) ──────────────────────────────────────
+
+    def test_removed_column_banner(self):
+        output = self.get_output([self.ADDED, self.BASE, '-c', 'id'])
+        self.assertTrue(output.startswith('! schema changed:'))
+        self.assertIn('removed: region', output)
+
+    # ── Reordered common columns (criterion 4) ────────────────────────────
+
+    def test_reordered_banner(self):
+        output = self.get_output([self.BASE, self.REORDERED, '-c', 'id'])
+        self.assertIn('reordered: true', output)
+
+    # ── All three at once ─────────────────────────────────────────────────
+
+    def test_all_three_deltas_in_banner(self):
+        output = self.get_output([self.BASE, self.ALL_RIGHT, '-c', 'id'])
+        self.assertIn('added: region', output)
+        self.assertIn('removed: name', output)
+        self.assertIn('reordered: true', output)
+
+    # ── Schema-only difference exits 1, not 0 (criterion 5) ───────────────
+
+    def test_schema_only_difference_exits_1(self):
+        """Zero row diffs but a reordered schema must exit 1, not 0."""
+        output = self.get_output([self.BASE, self.REORDERED, '-c', 'id'])
+        self.assertEqual(output.splitlines()[-1], '0 changed, 0 added, 0 removed (of 2 rows compared)')
+        code = self._exit_code_for([self.BASE, self.REORDERED, '-c', 'id'])
+        self.assertEqual(code, 1)
+
+    # ── --no-schema-check (criterion 6) ───────────────────────────────────
+
+    def test_no_schema_check_suppresses_banner(self):
+        output = self.get_output([self.BASE, self.ADDED, '-c', 'id', '--no-schema-check'])
+        self.assertNotIn('! schema changed', output)
+
+    def test_no_schema_check_schema_only_diff_exits_0(self):
+        """With --no-schema-check, a schema-only difference no longer drives the exit code."""
+        code = self._exit_code_for([self.BASE, self.REORDERED, '-c', 'id', '--no-schema-check'])
+        self.assertEqual(code, 0)
+
+    def test_no_schema_check_row_diff_still_exits_1(self):
+        """--no-schema-check only mutes schema; genuine row diffs still exit 1."""
+        code = self._exit_code_for(
+            ['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--no-schema-check'])
+        self.assertEqual(code, 1)
+
+    # ── -H/--no-header-row suppression (criterion 7) ──────────────────────
+
+    def test_header_row_off_suppresses_banner(self):
+        output = self.get_output([self.BASE, self.ADDED, '-H'])
+        self.assertNotIn('! schema changed', output)
+
+    def test_header_row_off_suppresses_schema_in_exit_code(self):
+        """Under -H the column-count difference must not drive the exit code to 1."""
+        code = self._exit_code_for([self.BASE, self.ADDED, '-H'])
+        self.assertEqual(code, 0)
+
+    def test_header_row_off_overrides_no_schema_check_flag(self):
+        """-H suppresses the schema section regardless of --no-schema-check."""
+        output = self.get_output([self.BASE, self.ADDED, '-H', '--no-schema-check'])
+        self.assertNotIn('! schema changed', output)
+
+    # ── Rename surfaces as removed + added (criterion 8) ──────────────────
+
+    def test_rename_reported_as_removed_plus_added(self):
+        output = self.get_output([self.RENAME_L, self.RENAME_R, '-c', 'id'])
+        self.assertIn('removed: qty', output)
+        self.assertIn('added: quantity', output)
+
+    # ── Schema banner also works in positional (no-key) mode ──────────────
+
+    def test_schema_banner_in_positional_mode(self):
+        output = self.get_output([self.BASE, self.ADDED])
+        self.assertTrue(output.startswith('! schema changed:'))
+        self.assertIn('added: region', output)
+
+    # ── Documentation of -H suppression in epilog ─────────────────────────
+
+    def test_epilog_documents_header_row_suppression(self):
+        self.assertIn('--no-schema-check', CSVDiff.epilog)
+        self.assertIn('-H', CSVDiff.epilog)
+        self.assertIn('schema', CSVDiff.epilog)

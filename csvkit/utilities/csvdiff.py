@@ -46,6 +46,31 @@ class DiffResult:
     compared_count: int
 
 
+def _compute_schema_delta(left_cols, right_cols):
+    """Build a SchemaDelta from two column-name lists.
+
+    added:     columns in RIGHT not in LEFT, in RIGHT's order.
+    removed:   columns in LEFT not in RIGHT, in LEFT's order.
+    reordered: True when the shared columns appear in a different relative order.
+    common:    shared columns in LEFT's order — the column set row diffs run on.
+    """
+    left_col_set = set(left_cols)
+    right_col_set = set(right_cols)
+    common_left_order = [c for c in left_cols if c in right_col_set]
+    common_right_order = [c for c in right_cols if c in left_col_set]
+    return SchemaDelta(
+        added=[c for c in right_cols if c not in left_col_set],
+        removed=[c for c in left_cols if c not in right_col_set],
+        reordered=common_left_order != common_right_order,
+        common=common_left_order,
+    )
+
+
+def _schema_changed(schema):
+    """True when columns were added, removed, or reordered between the two files."""
+    return bool(schema.added or schema.removed or schema.reordered)
+
+
 def _key_display(key_names, key_tuple):
     """Format a key tuple for human output. Single key: name=val. Composite: key=(v1,v2)."""
     if len(key_names) == 1:
@@ -59,7 +84,21 @@ def _fmt(val):
     return '' if val is None else str(val)
 
 
-def render_human(result, key_names, output_file):
+def _render_schema_banner(schema, output_file):
+    """Emit the '! schema changed:' block. Only non-empty deltas produce a line."""
+    output_file.write('! schema changed:\n')
+    if schema.added:
+        output_file.write('  added: {}\n'.format(', '.join(schema.added)))
+    if schema.removed:
+        output_file.write('  removed: {}\n'.format(', '.join(schema.removed)))
+    if schema.reordered:
+        output_file.write('  reordered: true\n')
+
+
+def render_human(result, key_names, output_file, show_schema=False):
+    if show_schema and _schema_changed(result.schema):
+        _render_schema_banner(result.schema, output_file)
+
     changed = [d for d in result.row_diffs if d.status == 'changed']
     added = [d for d in result.row_diffs if d.status == 'added']
     removed = [d for d in result.row_diffs if d.status == 'removed']
@@ -113,16 +152,7 @@ def _compute_positional_diff(left_table, right_table, ignore_names):
     """
     left_cols = list(left_table.column_names)
     right_cols = list(right_table.column_names)
-    left_col_set = set(left_cols)
-    right_col_set = set(right_cols)
-
-    schema = SchemaDelta(
-        added=[c for c in right_cols if c not in left_col_set],
-        removed=[c for c in left_cols if c not in right_col_set],
-        reordered=([c for c in left_cols if c in right_col_set]
-                   != [c for c in right_cols if c in left_col_set]),
-        common=[c for c in left_cols if c in right_col_set],
-    )
+    schema = _compute_schema_delta(left_cols, right_cols)
 
     compare_cols = [c for c in schema.common if c not in ignore_names]
     left_rows = list(left_table.rows)
@@ -184,15 +214,7 @@ def _compute_diff(left_table, right_table, left_key_names, right_key_names, on_d
     """
     left_cols = list(left_table.column_names)
     right_cols = list(right_table.column_names)
-    left_col_set = set(left_cols)
-    right_col_set = set(right_cols)
-
-    schema = SchemaDelta(
-        added=[c for c in right_cols if c not in left_col_set],
-        removed=[c for c in left_cols if c not in right_col_set],
-        reordered=[c for c in left_cols if c in right_col_set] != [c for c in right_cols if c in left_col_set],
-        common=[c for c in left_cols if c in right_col_set],
-    )
+    schema = _compute_schema_delta(left_cols, right_cols)
 
     all_key_names = set(left_key_names) | set(right_key_names)
     compare_cols = [c for c in schema.common if c not in all_key_names and c not in ignore_names]
@@ -259,6 +281,10 @@ class CSVDiff(CSVKitUtility):
         'Exit codes: 0 = equivalent, 1 = differences found, 2 = usage or parse error. '
         'Without -c/--key, rows are compared positionally (row N vs row N). '
         'A re-sorted file will produce wide spurious diffs in positional mode — use -c to compare by row identity. '
+        'Added, removed, or reordered columns are reported in a "! schema changed:" banner before the row diff '
+        'and count as a difference (exit 1); pass --no-schema-check to skip the banner and compare only the '
+        'shared columns. With -H/--no-header-row the schema banner is suppressed entirely, because synthetic '
+        'column names (a, b, c, ...) make schema drift meaningless. '
         'With --on-dup=all, duplicate keys on both sides produce a Cartesian product of comparisons, '
         'which can be O(n*m) per key with large duplicate groups — use with caution. '
         '(Experimental - interface may change.)'
@@ -284,6 +310,11 @@ class CSVDiff(CSVKitUtility):
         self.argparser.add_argument(
             '--ignore', dest='ignore', default='',
             help='Comma-separated column names or indices to exclude from row comparison.')
+        self.argparser.add_argument(
+            '--no-schema-check', dest='no_schema_check', action='store_true',
+            help='Skip the schema-drift section. Added, removed, or reordered columns are '
+                 'no longer reported in a banner or counted toward the exit code; rows are '
+                 'compared on the shared columns as if the schemas were identical.')
         self.argparser.add_argument(
             '-y', '--snifflimit', dest='sniff_limit', type=int, default=1024,
             help='Limit CSV dialect sniffing to the specified number of bytes. '
@@ -321,6 +352,10 @@ class CSVDiff(CSVKitUtility):
 
         ignore_names = self._resolve_ignore_cols(left_table, right_table)
 
+        # Schema drift is checked unless opted out, or suppressed under -H, where
+        # synthetic headers (a, b, c, ...) make the comparison meaningless (TDD OQ7).
+        schema_active = not self.args.no_schema_check and not self.args.no_header_row
+
         if self.args.key:
             left_key_names = self._resolve_key_names(left_table, 'LEFT')
             right_key_names = self._resolve_key_names(right_table, 'RIGHT')
@@ -331,12 +366,12 @@ class CSVDiff(CSVKitUtility):
                 )
             except DuplicateKeyError as e:
                 self.argparser.error(str(e))
-            render_human(result, left_key_names, self.output_file)
+            render_human(result, left_key_names, self.output_file, show_schema=schema_active)
         else:
             result = _compute_positional_diff(left_table, right_table, ignore_names)
-            render_human(result, ['row'], self.output_file)
+            render_human(result, ['row'], self.output_file, show_schema=schema_active)
 
-        if result.row_diffs:
+        if result.row_diffs or (schema_active and _schema_changed(result.schema)):
             sys.exit(1)
 
     def _read_table(self, f, label, path, sniff_limit, column_types):
