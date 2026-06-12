@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 
 import csv
+import json
 import sys
 from dataclasses import dataclass
 
 import agate
 import agate.exceptions
 
-from csvkit.cli import CSVKitUtility, isatty, match_column_identifier
+from csvkit.cli import CSVKitUtility, default_str_decimal, isatty, match_column_identifier
 from csvkit.exceptions import ColumnIdentifierError
 
 _PARSE_ERRORS = (csv.Error, UnicodeDecodeError, agate.exceptions.FieldSizeLimitError)
@@ -119,6 +120,53 @@ def render_human(result, key_names, output_file, show_schema=False):
         elif delta.status == 'added':
             field_parts = ['{}={}'.format(col, _fmt(right)) for col, (_, right) in delta.fields.items()]
             output_file.write('+ {}   {}\n'.format(key_part, '  '.join(field_parts)))
+
+
+def render_jsonl(result, key_names, output_file, show_schema=False):
+    n_changed = n_added = n_removed = 0
+    for d in result.row_diffs:
+        if d.status == 'changed':
+            n_changed += 1
+        elif d.status == 'added':
+            n_added += 1
+        else:
+            n_removed += 1
+    schema_reported = show_schema and _schema_changed(result.schema)
+
+    summary = {
+        'event': 'summary',
+        'compared': result.compared_count,
+        'changed': n_changed,
+        'added': n_added,
+        'removed': n_removed,
+        'schema_changed': schema_reported,
+    }
+    output_file.write(json.dumps(summary, default=default_str_decimal) + '\n')
+
+    if schema_reported:
+        schema_event = {
+            'event': 'schema',
+            'added_columns': result.schema.added,
+            'removed_columns': result.schema.removed,
+            'reordered': result.schema.reordered,
+        }
+        output_file.write(json.dumps(schema_event, default=default_str_decimal) + '\n')
+
+    for delta in result.row_diffs:
+        key_obj = dict(zip(key_names, delta.key))
+        if delta.status == 'changed':
+            fields = {col: {'left': lv, 'right': rv} for col, (lv, rv) in delta.fields.items()}
+        elif delta.status == 'added':
+            fields = {col: rv for col, (_, rv) in delta.fields.items()}
+        else:  # removed
+            fields = {col: lv for col, (lv, _) in delta.fields.items()}
+        row_event = {
+            'event': 'row',
+            'status': delta.status,
+            'key': key_obj,
+            'fields': fields,
+        }
+        output_file.write(json.dumps(row_event, default=default_str_decimal) + '\n')
 
 
 def _build_key_index(table, key_names, on_dup, side):
@@ -311,6 +359,11 @@ class CSVDiff(CSVKitUtility):
             '--ignore', dest='ignore', default='',
             help='Comma-separated column names or indices to exclude from row comparison.')
         self.argparser.add_argument(
+            '-f', '--format', dest='format', default='human',
+            choices=['human', 'jsonl'],
+            help='Output format. "human" (default) is the human-readable layout. '
+                 '"jsonl" emits one JSON object per event (summary, optional schema, then one per row diff).')
+        self.argparser.add_argument(
             '--no-schema-check', dest='no_schema_check', action='store_true',
             help='Skip the schema-drift section. Added, removed, or reordered columns are '
                  'no longer reported in a banner or counted toward the exit code; rows are '
@@ -356,6 +409,8 @@ class CSVDiff(CSVKitUtility):
         # synthetic headers (a, b, c, ...) make the comparison meaningless (TDD OQ7).
         schema_active = not self.args.no_schema_check and not self.args.no_header_row
 
+        renderer = render_jsonl if self.args.format == 'jsonl' else render_human
+
         if self.args.key:
             left_key_names = self._resolve_key_names(left_table, 'LEFT')
             right_key_names = self._resolve_key_names(right_table, 'RIGHT')
@@ -366,10 +421,10 @@ class CSVDiff(CSVKitUtility):
                 )
             except DuplicateKeyError as e:
                 self.argparser.error(str(e))
-            render_human(result, left_key_names, self.output_file, show_schema=schema_active)
+            renderer(result, left_key_names, self.output_file, show_schema=schema_active)
         else:
             result = _compute_positional_diff(left_table, right_table, ignore_names)
-            render_human(result, ['row'], self.output_file, show_schema=schema_active)
+            renderer(result, ['row'], self.output_file, show_schema=schema_active)
 
         if result.row_diffs or (schema_active and _schema_changed(result.schema)):
             sys.exit(1)
