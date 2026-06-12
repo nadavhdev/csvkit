@@ -1,3 +1,12 @@
+2.3.0 - TBD
+-----------
+
+-  feat: :doc:`/scripts/csvdiff` adds a CSV-aware diff tool (experimental). ``csvdiff`` compares
+   two CSV files at the record and field level, reporting added, removed, and changed rows, with
+   optional schema-drift detection. **Note:** ``csvdiff`` introduces a 0/1/2 exit-code contract
+   (0 = equivalent, 1 = differences found, 2 = usage or parse error) — a new pattern for csvkit
+   tools that does not affect any existing tool.
+
 2.2.0 - December 15, 2025
 -------------------------
 

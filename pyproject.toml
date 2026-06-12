@@ -76,6 +76,7 @@ exclude = ["tests", "tests.*"]
 "share/man/man1" = [
     "man/csvclean.1",
     "man/csvcut.1",
+    "man/csvdiff.1",
     "man/csvformat.1",
     "man/csvgrep.1",
     "man/csvjoin.1",

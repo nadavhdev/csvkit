@@ -351,7 +351,7 @@ class CSVDiff(CSVKitUtility):
         'column names (a, b, c, ...) make schema drift meaningless. '
         'With --on-dup=all, duplicate keys on both sides produce a Cartesian product of comparisons, '
         'which can be O(n*m) per key with large duplicate groups — use with caution. '
-        '(Experimental - interface may change.) '
+        '(Experimental — flags, output format, and exit codes may change in 2.4.x.) '
         '--quiet suppresses all stdout output; the 0/1/2 exit code is still set normally. '
         'Use --quiet (not -q) — -q/--quotechar is an inherited flag.'
     )

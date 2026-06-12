@@ -1,0 +1,169 @@
+.\" Man page generated from reStructuredText.
+.
+.
+.nr rst2man-indent-level 0
+.
+.de1 rstReportMargin
+\\$1 \\n[an-margin]
+level \\n[rst2man-indent-level]
+level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
+-
+\\n[rst2man-indent0]
+\\n[rst2man-indent1]
+\\n[rst2man-indent2]
+..
+.de1 INDENT
+.\" .rstReportMargin pre:
+. RS \\$1
+. nr rst2man-indent\\n[rst2man-indent-level] \\n[an-margin]
+. nr rst2man-indent-level +1
+.\" .rstReportMargin post:
+..
+.de UNINDENT
+. RE
+.\" indent \\n[an-margin]
+.\" old: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.nr rst2man-indent-level -1
+.\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.in \\n[rst2man-indent\\n[rst2man-indent-level]]u
+..
+.TH "CSVDIFF" "1" "Jun 12, 2026" "2.3.0" "csvkit"
+.SH NAME
+csvdiff \- csvdiff Documentation
+.SH DESCRIPTION
+.sp
+\fBExperimental.\fP csvdiff was added in csvkit 2.3.0 with experimental status. Its flags,
+output format, and exit codes may change in 2.4.x based on user feedback.
+.sp
+Compares two CSV files semantically, at the record and field level, rather than line by line.
+Reports which rows were added, removed, or changed, with per\-field details for changed rows.
+Columns that differ between the two files are reported in a schema\-drift section before the
+row diff.
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+usage: csvdiff [\-h] [\-d DELIMITER] [\-t] [\-q QUOTECHAR] [\-u {0,1,2,3,4,5}] [\-b]
+               [\-p ESCAPECHAR] [\-z FIELD_SIZE_LIMIT] [\-e ENCODING] [\-L LOCALE]
+               [\-S] [\-\-blanks] [\-\-null\-value NULL_VALUES [NULL_VALUES ...]]
+               [\-\-date\-format DATE_FORMAT] [\-\-datetime\-format DATETIME_FORMAT]
+               [\-\-no\-leading\-zeroes] [\-H] [\-K SKIP_LINES] [\-v] [\-l]
+               [\-\-add\-bom] [\-\-zero] [\-V] [\-c KEY] [\-\-on\-dup {error,first,all}]
+               [\-\-ignore IGNORE] [\-f {human,jsonl,summary}] [\-\-quiet]
+               [\-\-no\-schema\-check] [\-y SNIFF_LIMIT] [\-I]
+               [FILE ...]
+
+Compare two CSV files semantically, reporting row\-level differences.
+
+positional arguments:
+  FILE                  The two CSV files to compare. Use "\-" for stdin (at
+                        most once).
+
+options:
+  \-c, \-\-key KEY         Column name(s) or 1\-based index(es) identifying each
+                        row uniquely. Comma\-separated for composite keys (e.g.
+                        \-c "order_id,line_no"). When omitted, rows are
+                        compared positionally (row N of LEFT vs row N of RIGHT).
+  \-\-on\-dup {error,first,all}
+                        Behavior when \-\-key is not unique within a file.
+                        "error" (default): exit 2 naming the duplicate key and
+                        rows. "first": keep only the first occurrence of each
+                        key. "all": compare the Cartesian product of all
+                        matching duplicate rows (warning: O(n*m) per key; large
+                        duplicate groups can produce enormous output).
+  \-\-ignore IGNORE       Comma\-separated column names or indices to exclude from
+                        row comparison.
+  \-f, \-\-format {human,jsonl,summary}
+                        Output format. "human" (default) is the human\-readable
+                        layout. "jsonl" emits one JSON object per event
+                        (summary, optional schema, then one per row diff).
+                        "summary" prints only the headline counts (and schema
+                        banner if applicable).
+  \-\-quiet               Suppress all stdout output; exit code only. (\-q is not
+                        available as a short form \(em it is the inherited
+                        \-q/\-\-quotechar flag.)
+  \-\-no\-schema\-check     Skip the schema\-drift section. Added, removed, or
+                        reordered columns are no longer reported in a banner or
+                        counted toward the exit code; rows are compared on the
+                        shared columns as if the schemas were identical.
+  \-y, \-\-snifflimit SNIFF_LIMIT
+                        Limit CSV dialect sniffing to the specified number of
+                        bytes. Specify "0" to disable sniffing entirely, or
+                        "\-1" to sniff the entire file.
+  \-I, \-\-no\-inference    Disable type inference when parsing the input. Compare
+                        as raw strings.
+
+Exit codes: 0 = equivalent, 1 = differences found, 2 = usage or parse error.
+This is a new pattern for csvkit \(em existing tools use only 0 and 2.
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+See also: \fI\%Arguments common to all tools\fP\&.
+.SH EXAMPLES
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+csvdiff \-c id examples/diff_a.csv examples/diff_b.csv
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Compare using a composite key:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+csvdiff \-c "order_id,line_no" examples/diff_composite_a.csv examples/diff_composite_b.csv
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Compare row by row without a key (positional mode):
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+csvdiff examples/diff_pos_a.csv examples/diff_pos_b.csv
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Exit code only (for CI pipelines):
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+csvdiff \-c id before.csv after.csv \-\-quiet
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Emit machine\-readable JSONL:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+csvdiff \-c id before.csv after.csv \-\-format jsonl
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.SH AUTHOR
+Christopher Groskopf and contributors
+.SH COPYRIGHT
+2016, Christopher Groskopf and James McKinney
+.\" Generated by docutils manpage writer.
+.

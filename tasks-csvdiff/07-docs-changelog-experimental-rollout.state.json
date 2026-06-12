@@ -1,0 +1,57 @@
+{
+  "task_id": "07-docs-changelog-experimental-rollout",
+  "task_path": "./tasks-csvdiff/07-docs-changelog-experimental-rollout.md",
+  "current_stage": "branch",
+  "stages_completed": ["load"],
+  "started_at": "2026-06-12T00:00:00Z",
+  "updated_at": "2026-06-12T00:00:00Z",
+  "completed_at": null,
+  "attempts": {
+    "load": 1,
+    "branch": 1
+  },
+  "last_error": null,
+  "files_changed": [],
+  "plan_mode": "declined",
+  "branch_strategy": "new",
+  "branch_name": "docs/csvdiff-docs-changelog",
+  "branch_base": "feat/csvdiff-summary-quiet",
+  "branch_decided_at": "2026-06-12T00:00:00Z",
+  "branch_decided_in_plan": false,
+  "review_gate_preference": "conditional",
+  "tdd_path": "./TDD-csvdiff.md",
+  "tdd_sections_read": ["§0", "§4a", "§4b", "§4d", "§4g", "§7", "§8", "§10"],
+  "dependencies_verified": [
+    "01-walking-skeleton-keyed-csvdiff",
+    "02-composite-key-and-duplicate-handling",
+    "03-no-key-positional-fallback",
+    "04-schema-drift-detection",
+    "05-jsonl-renderer",
+    "06-summary-renderer-and-quiet"
+  ],
+  "prior_done_md_read": [
+    "tasks-csvdiff/01-walking-skeleton-keyed-csvdiff.done.md",
+    "tasks-csvdiff/02-composite-key-and-duplicate-handling.done.md",
+    "tasks-csvdiff/03-no-key-positional-fallback.done.md",
+    "tasks-csvdiff/04-schema-drift-detection.done.md",
+    "tasks-csvdiff/05-jsonl-renderer.done.md",
+    "tasks-csvdiff/06-summary-renderer-and-quiet.done.md"
+  ],
+  "tdd_correlation": {
+    "rst experimental banner": "§8 Rollout Phase 1",
+    "exit-code contract 0/1/2 paragraphs": "§4b Exit codes + §7 downstream-script risk",
+    "typed-by-default + -I escape": "§4g Comparison semantics + §0 epilog requirement",
+    "in-memory bound statement": "§4d Memory",
+    "rename-as-removed+added behavior": "§7 schema-rename risk",
+    "global -e/--encoding limitation": "§7 OQ6",
+    "-H/schema-diff suppression": "§10 OQ7",
+    "CHANGELOG 0/1/2 callout": "§7 downstream-script-assumed-exit-codes risk",
+    "docs script index listing": "§0 PR checklist",
+    "AUTHORS update": "§0 PR checklist"
+  },
+  "commit_sha": null,
+  "pr_url": null,
+  "review_skipped": false,
+  "review_rounds": [],
+  "surfaces_raised": []
+}

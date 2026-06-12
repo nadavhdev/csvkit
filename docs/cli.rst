@@ -21,6 +21,7 @@ Processing
 
     scripts/csvclean
     scripts/csvcut
+    scripts/csvdiff
     scripts/csvgrep
     scripts/csvjoin
     scripts/csvsort
@@ -48,7 +49,7 @@ Output and Analysis
     scripts/csvstat
 
 * To draw plots, consider `jp <https://github.com/sgreben/jp>`_.
-* To diff CSVs, consider `daff <https://github.com/paulfitz/daff>`_.
+* To diff CSVs, use :doc:`/scripts/csvdiff` (built-in) or consider `daff <https://github.com/paulfitz/daff>`_ for a line-oriented alternative.
 * To explore CSVs interactively, consider `VisiData <https://visidata.org>`_.
 
 Alternatives to :doc:`/scripts/csvsql` are `q <https://github.com/harelba/q>`_ and `textql <https://github.com/dinedal/textql>`_.
