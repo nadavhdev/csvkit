@@ -169,6 +169,22 @@ def render_jsonl(result, key_names, output_file, show_schema=False):
         output_file.write(json.dumps(row_event, default=default_str_decimal) + '\n')
 
 
+def render_summary(result, key_names, output_file, show_schema=False):
+    if show_schema and _schema_changed(result.schema):
+        _render_schema_banner(result.schema, output_file)
+    n_changed = n_added = n_removed = 0
+    for d in result.row_diffs:
+        if d.status == 'changed':
+            n_changed += 1
+        elif d.status == 'added':
+            n_added += 1
+        else:
+            n_removed += 1
+    output_file.write('{} changed, {} added, {} removed (of {} rows compared)\n'.format(
+        n_changed, n_added, n_removed, result.compared_count,
+    ))
+
+
 def _build_key_index(table, key_names, on_dup, side):
     """Build dict[key_tuple -> list[row_index]], applying the on_dup policy.
 
@@ -335,7 +351,9 @@ class CSVDiff(CSVKitUtility):
         'column names (a, b, c, ...) make schema drift meaningless. '
         'With --on-dup=all, duplicate keys on both sides produce a Cartesian product of comparisons, '
         'which can be O(n*m) per key with large duplicate groups — use with caution. '
-        '(Experimental - interface may change.)'
+        '(Experimental - interface may change.) '
+        '--quiet suppresses all stdout output; the 0/1/2 exit code is still set normally. '
+        'Use --quiet (not -q) — -q/--quotechar is an inherited flag.'
     )
     override_flags = ['f']
 
@@ -360,9 +378,14 @@ class CSVDiff(CSVKitUtility):
             help='Comma-separated column names or indices to exclude from row comparison.')
         self.argparser.add_argument(
             '-f', '--format', dest='format', default='human',
-            choices=['human', 'jsonl'],
+            choices=['human', 'jsonl', 'summary'],
             help='Output format. "human" (default) is the human-readable layout. '
-                 '"jsonl" emits one JSON object per event (summary, optional schema, then one per row diff).')
+                 '"jsonl" emits one JSON object per event (summary, optional schema, then one per row diff). '
+                 '"summary" prints only the headline counts (and schema marker if applicable).')
+        self.argparser.add_argument(
+            '--quiet', dest='quiet', action='store_true',
+            help='Suppress all stdout output; exit code only. '
+                 '(-q is not available as a short form — it is the inherited -q/--quotechar flag.)')
         self.argparser.add_argument(
             '--no-schema-check', dest='no_schema_check', action='store_true',
             help='Skip the schema-drift section. Added, removed, or reordered columns are '
@@ -409,7 +432,14 @@ class CSVDiff(CSVKitUtility):
         # synthetic headers (a, b, c, ...) make the comparison meaningless (TDD OQ7).
         schema_active = not self.args.no_schema_check and not self.args.no_header_row
 
-        renderer = render_jsonl if self.args.format == 'jsonl' else render_human
+        if self.args.quiet:
+            renderer = None
+        elif self.args.format == 'jsonl':
+            renderer = render_jsonl
+        elif self.args.format == 'summary':
+            renderer = render_summary
+        else:
+            renderer = render_human
 
         if self.args.key:
             left_key_names = self._resolve_key_names(left_table, 'LEFT')
@@ -421,10 +451,12 @@ class CSVDiff(CSVKitUtility):
                 )
             except DuplicateKeyError as e:
                 self.argparser.error(str(e))
-            renderer(result, left_key_names, self.output_file, show_schema=schema_active)
+            if renderer is not None:
+                renderer(result, left_key_names, self.output_file, show_schema=schema_active)
         else:
             result = _compute_positional_diff(left_table, right_table, ignore_names)
-            renderer(result, ['row'], self.output_file, show_schema=schema_active)
+            if renderer is not None:
+                renderer(result, ['row'], self.output_file, show_schema=schema_active)
 
         if result.row_diffs or (schema_active and _schema_changed(result.schema)):
             sys.exit(1)

@@ -10,7 +10,7 @@ import agate
 
 from csvkit.utilities.csvdiff import (CSVDiff, DiffResult, DuplicateKeyError, RowDelta, SchemaDelta, _build_key_index,
                                       _compute_diff, _compute_positional_diff, _compute_schema_delta, _key_display,
-                                      _schema_changed, launch_new_instance, render_human, render_jsonl)
+                                      _schema_changed, launch_new_instance, render_human, render_jsonl, render_summary)
 from tests.utils import CSVKitTestCase, EmptyFileTests, stdin_as_string
 
 
@@ -1475,3 +1475,202 @@ class TestCSVDiffJSONL(_CSVDiffOutputMixin, CSVKitTestCase):
         self.assertEqual(added_ev['fields']['name'], 'Bob')
         removed_ev = next(e for e in events if e.get('status') == 'removed')
         self.assertEqual(removed_ev['fields']['name'], 'Alice')
+
+
+class TestCSVDiffSummary(_CSVDiffOutputMixin, CSVKitTestCase):
+    """Tests for --format=summary (render_summary): headline-only mode."""
+
+    Utility = CSVDiff
+
+    # ── Content: headline only, no per-row lines ─────────────────────────
+
+    def test_summary_emits_headline_only(self):
+        """--format summary must not emit any per-row diff lines (-, ~, +)."""
+        output = self.get_output(
+            ['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--format', 'summary'])
+        for line in output.splitlines():
+            self.assertFalse(line and line[0] in ('-', '~', '+'),
+                             'Unexpected per-row diff line: {!r}'.format(line))
+
+    def test_summary_headline_counts(self):
+        output = self.get_output(
+            ['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--format', 'summary'])
+        self.assertIn('1 changed, 1 added, 1 removed', output)
+
+    def test_summary_equal_files_zero_counts_single_line(self):
+        output = self.get_output(
+            ['examples/diff_a.csv', 'examples/diff_a.csv', '-c', 'id', '--format', 'summary'])
+        lines = [ln for ln in output.splitlines() if ln.strip()]
+        self.assertEqual(len(lines), 1)
+        self.assertIn('0 changed, 0 added, 0 removed', lines[0])
+
+    # ── Schema marker ────────────────────────────────────────────────────
+
+    def test_summary_with_schema_change_shows_banner(self):
+        """Schema banner appears before headline; no per-row lines."""
+        output = self.get_output([
+            'examples/diff_schema_base.csv', 'examples/diff_schema_added.csv',
+            '-c', 'id', '--format', 'summary',
+        ])
+        self.assertIn('! schema changed:', output)
+        self.assertIn('added: region', output)
+        # Still no per-row diff lines
+        for line in output.splitlines():
+            self.assertFalse(line and line[0] in ('-', '~', '+'),
+                             'Unexpected per-row diff line: {!r}'.format(line))
+
+    def test_summary_no_schema_check_suppresses_banner(self):
+        output = self.get_output([
+            'examples/diff_schema_base.csv', 'examples/diff_schema_added.csv',
+            '-c', 'id', '--format', 'summary', '--no-schema-check',
+        ])
+        self.assertNotIn('! schema changed:', output)
+        self.assertIn('changed', output)
+
+    # ── Exit codes ───────────────────────────────────────────────────────
+
+    def test_summary_exit_0_equal_files(self):
+        code = self._exit_code_for(
+            ['examples/diff_a.csv', 'examples/diff_a.csv', '-c', 'id', '--format', 'summary'])
+        self.assertEqual(code, 0)
+
+    def test_summary_exit_1_differences(self):
+        code = self._exit_code_for(
+            ['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--format', 'summary'])
+        self.assertEqual(code, 1)
+
+    def test_summary_exit_2_bad_key(self):
+        code = self._exit_code_for(
+            ['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'nonexistent', '--format', 'summary'])
+        self.assertEqual(code, 2)
+
+    def test_summary_schema_only_diff_exits_1(self):
+        """Schema-only difference (no row diffs) must still exit 1 with --format summary."""
+        code = self._exit_code_for([
+            'examples/diff_schema_base.csv', 'examples/diff_schema_reordered.csv',
+            '-c', 'id', '--format', 'summary',
+        ])
+        self.assertEqual(code, 1)
+
+    # ── Engine unit test ─────────────────────────────────────────────────
+
+    def test_render_summary_engine_unit(self):
+        """render_summary can be called directly on a DiffResult without the CLI."""
+        schema = SchemaDelta(added=[], removed=[], reordered=False, common=['name', 'score'])
+        row_diffs = [
+            RowDelta(status='changed', key=(1,), fields={'score': (10, 20)}),
+            RowDelta(status='added', key=(2,), fields={'name': (None, 'Bob')}),
+            RowDelta(status='removed', key=(3,), fields={'name': ('Alice', None)}),
+        ]
+        result = DiffResult(schema=schema, row_diffs=row_diffs, unchanged_count=1, compared_count=2)
+        buf = io.StringIO()
+        render_summary(result, ['id'], buf, show_schema=False)
+        lines = [ln for ln in buf.getvalue().splitlines() if ln.strip()]
+        self.assertEqual(len(lines), 1)
+        self.assertIn('1 changed, 1 added, 1 removed (of 2 rows compared)', lines[0])
+
+    def test_render_summary_engine_unit_with_schema(self):
+        """render_summary emits the schema banner then the headline when show_schema=True."""
+        schema = SchemaDelta(added=['region'], removed=[], reordered=False, common=['id'])
+        result = DiffResult(schema=schema, row_diffs=[], unchanged_count=0, compared_count=0)
+        buf = io.StringIO()
+        render_summary(result, ['id'], buf, show_schema=True)
+        content = buf.getvalue()
+        self.assertIn('! schema changed:', content)
+        self.assertIn('added: region', content)
+        self.assertIn('0 changed, 0 added, 0 removed', content)
+        # Schema banner before headline
+        self.assertLess(content.index('! schema changed:'), content.index('0 changed'))
+
+
+class TestCSVDiffQuiet(_CSVDiffOutputMixin, CSVKitTestCase):
+    """Tests for --quiet: suppress all stdout, preserve exit codes."""
+
+    Utility = CSVDiff
+
+    def _capture_stderr_for(self, args):
+        """Run and return (exit_code, stdout_bytes, stderr_text)."""
+        output_file = io.TextIOWrapper(io.BytesIO(), encoding='utf-8', newline='', write_through=True)
+        stderr_buf = io.StringIO()
+        utility = CSVDiff(args, output_file)
+        try:
+            with redirect_stderr(stderr_buf):
+                utility.run()
+            code = 0
+        except SystemExit as exc:
+            code = exc.code
+        finally:
+            stdout_bytes = output_file.buffer.getvalue()
+            output_file.close()
+        return code, stdout_bytes, stderr_buf.getvalue()
+
+    # ── Zero bytes on stdout ─────────────────────────────────────────────
+
+    def test_quiet_produces_no_stdout(self):
+        """--quiet must write zero bytes to stdout regardless of diff content."""
+        _, stdout_bytes, _ = self._capture_stderr_for(
+            ['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--quiet'])
+        self.assertEqual(stdout_bytes, b'')
+
+    def test_quiet_equal_files_also_no_stdout(self):
+        _, stdout_bytes, _ = self._capture_stderr_for(
+            ['examples/diff_a.csv', 'examples/diff_a.csv', '-c', 'id', '--quiet'])
+        self.assertEqual(stdout_bytes, b'')
+
+    # ── Exit codes preserved ─────────────────────────────────────────────
+
+    def test_quiet_exit_0_equal_files(self):
+        code, _, _ = self._capture_stderr_for(
+            ['examples/diff_a.csv', 'examples/diff_a.csv', '-c', 'id', '--quiet'])
+        self.assertEqual(code, 0)
+
+    def test_quiet_exit_1_differences(self):
+        code, _, _ = self._capture_stderr_for(
+            ['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--quiet'])
+        self.assertEqual(code, 1)
+
+    def test_quiet_exit_2_bad_key(self):
+        code, _, _ = self._capture_stderr_for(
+            ['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'nonexistent', '--quiet'])
+        self.assertEqual(code, 2)
+
+    # ── Stderr still printed on error ────────────────────────────────────
+
+    def test_quiet_stderr_on_error(self):
+        """--quiet must not suppress stderr; malformed CSV produces LEFT (<path>): detail on stderr."""
+        import os
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as bad_f:
+            bad_f.write(b'id,name\n1,\xff\xfe\n')  # \xff\xfe is invalid UTF-8
+            bad_path = bad_f.name
+        try:
+            code, stdout_bytes, stderr = self._capture_stderr_for(
+                [bad_path, 'examples/diff_b.csv', '--quiet'])
+            self.assertEqual(code, 2)
+            self.assertEqual(stdout_bytes, b'')
+            self.assertIn('LEFT (', stderr)  # LEFT (<path>): <detail> format
+        finally:
+            os.unlink(bad_path)
+
+    # ── -q short form is --quotechar, not --quiet ─────────────────────────
+
+    def test_quiet_schema_only_diff_exits_1_zero_stdout(self):
+        """--quiet with a schema-only diff (no row diffs) must exit 1 with zero stdout bytes."""
+        code, stdout_bytes, _ = self._capture_stderr_for([
+            'examples/diff_schema_base.csv', 'examples/diff_schema_reordered.csv',
+            '-c', 'id', '--quiet',
+        ])
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout_bytes, b'')
+
+    def test_quiet_short_form_is_quotechar_not_quiet(self):
+        """-q without a value exits 2 (argparse: --quotechar requires an argument)."""
+        stderr_buf = io.StringIO()
+        with redirect_stderr(stderr_buf):
+            with patch.object(sys, 'argv',
+                              ['csvdiff', 'examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '-q']):
+                with self.assertRaises(SystemExit) as cm:
+                    launch_new_instance()
+        self.assertEqual(cm.exception.code, 2)
+        # Must not be a "no output / quiet" behavior — must be an argparse error
+        self.assertIn('quotechar', stderr_buf.getvalue().lower())
