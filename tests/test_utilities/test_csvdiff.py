@@ -1,4 +1,5 @@
 import io
+import json
 import sys
 import time
 import unittest
@@ -7,9 +8,9 @@ from unittest.mock import patch
 
 import agate
 
-from csvkit.utilities.csvdiff import (CSVDiff, DiffResult, DuplicateKeyError, SchemaDelta, _build_key_index,
+from csvkit.utilities.csvdiff import (CSVDiff, DiffResult, DuplicateKeyError, RowDelta, SchemaDelta, _build_key_index,
                                       _compute_diff, _compute_positional_diff, _compute_schema_delta, _key_display,
-                                      _schema_changed, launch_new_instance, render_human)
+                                      _schema_changed, launch_new_instance, render_human, render_jsonl)
 from tests.utils import CSVKitTestCase, EmptyFileTests, stdin_as_string
 
 
@@ -1246,3 +1247,231 @@ class TestCSVDiffSchema(_CSVDiffOutputMixin, CSVKitTestCase):
         self.assertIn('--no-schema-check', CSVDiff.epilog)
         self.assertIn('-H', CSVDiff.epilog)
         self.assertIn('schema', CSVDiff.epilog)
+
+
+class TestCSVDiffJSONL(_CSVDiffOutputMixin, CSVKitTestCase):
+    """Tests for --format=jsonl (render_jsonl)."""
+
+    Utility = CSVDiff
+
+    def _parse_jsonl(self, output):
+        """Parse each non-empty line of output as a JSON object."""
+        return [json.loads(line) for line in output.splitlines() if line.strip()]
+
+    # ── Equal-files: summary only, all-zero counts ──────────────────────
+
+    def test_equal_files_emits_summary_only(self):
+        output = self.get_output(['examples/diff_a.csv', 'examples/diff_a.csv', '-c', 'id', '--format', 'jsonl'])
+        events = self._parse_jsonl(output)
+        self.assertEqual(len(events), 1)
+        ev = events[0]
+        self.assertEqual(ev['event'], 'summary')
+        self.assertEqual(ev['compared'], 3)
+        self.assertEqual(ev['changed'], 0)
+        self.assertEqual(ev['added'], 0)
+        self.assertEqual(ev['removed'], 0)
+        self.assertFalse(ev['schema_changed'])
+
+    # ── Every line independently parseable ──────────────────────────────
+
+    def test_every_line_parseable(self):
+        output = self.get_output(['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--format', 'jsonl'])
+        for line in output.splitlines():
+            if line.strip():
+                self.assertIsInstance(json.loads(line), dict)
+
+    # ── Row-only diff: summary + row events, no schema event ────────────
+
+    def test_row_diff_emits_summary_and_row_events(self):
+        output = self.get_output(['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--format', 'jsonl'])
+        events = self._parse_jsonl(output)
+        self.assertEqual(events[0]['event'], 'summary')
+        self.assertFalse(any(e['event'] == 'schema' for e in events))
+        self.assertTrue(any(e['event'] == 'row' for e in events))
+
+    def test_summary_counts_match_row_events(self):
+        output = self.get_output(['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--format', 'jsonl'])
+        events = self._parse_jsonl(output)
+        summary = events[0]
+        row_events = [e for e in events if e['event'] == 'row']
+        self.assertEqual(summary['changed'], sum(1 for e in row_events if e['status'] == 'changed'))
+        self.assertEqual(summary['added'], sum(1 for e in row_events if e['status'] == 'added'))
+        self.assertEqual(summary['removed'], sum(1 for e in row_events if e['status'] == 'removed'))
+
+    # ── changed row: fields shape {col: {left: ..., right: ...}} ────────
+
+    def test_changed_row_fields_shape(self):
+        output = self.get_output(['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--format', 'jsonl'])
+        events = self._parse_jsonl(output)
+        changed = [e for e in events if e['event'] == 'row' and e['status'] == 'changed']
+        self.assertTrue(len(changed) > 0)
+        for ev in changed:
+            for col, val in ev['fields'].items():
+                self.assertIn('left', val)
+                self.assertIn('right', val)
+
+    # ── added row: fields shape {col: value} (flat) ─────────────────────
+
+    def test_added_row_fields_shape(self):
+        output = self.get_output(['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--format', 'jsonl'])
+        events = self._parse_jsonl(output)
+        added = [e for e in events if e['event'] == 'row' and e['status'] == 'added']
+        self.assertTrue(len(added) > 0)
+        for ev in added:
+            for col, val in ev['fields'].items():
+                self.assertNotIsInstance(val, dict)
+
+    # ── removed row: fields shape {col: value} (flat) ───────────────────
+
+    def test_removed_row_fields_shape(self):
+        output = self.get_output(['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--format', 'jsonl'])
+        events = self._parse_jsonl(output)
+        removed = [e for e in events if e['event'] == 'row' and e['status'] == 'removed']
+        self.assertTrue(len(removed) > 0)
+        for ev in removed:
+            for col, val in ev['fields'].items():
+                self.assertNotIsInstance(val, dict)
+
+    # ── Schema-only diff: summary + schema event, no row events ─────────
+
+    def test_schema_only_diff_emits_schema_event(self):
+        # diff_schema_base vs diff_schema_reordered: reordered common columns, no row diffs
+        output = self.get_output([
+            'examples/diff_schema_base.csv', 'examples/diff_schema_reordered.csv',
+            '-c', 'id', '--format', 'jsonl',
+        ])
+        events = self._parse_jsonl(output)
+        self.assertEqual(events[0]['event'], 'summary')
+        self.assertTrue(events[0]['schema_changed'])
+        schema_events = [e for e in events if e['event'] == 'schema']
+        self.assertEqual(len(schema_events), 1)
+        self.assertIn('added_columns', schema_events[0])
+        self.assertIn('removed_columns', schema_events[0])
+        self.assertIn('reordered', schema_events[0])
+        self.assertFalse(any(e['event'] == 'row' for e in events))
+
+    def test_schema_event_fields(self):
+        # diff_schema_base (id,name,price) vs diff_schema_added (id,name,price,region)
+        output = self.get_output([
+            'examples/diff_schema_base.csv', 'examples/diff_schema_added.csv',
+            '-c', 'id', '--format', 'jsonl',
+        ])
+        events = self._parse_jsonl(output)
+        schema_ev = next(e for e in events if e['event'] == 'schema')
+        self.assertIn('region', schema_ev['added_columns'])
+        self.assertEqual(schema_ev['removed_columns'], [])
+
+    # ── Combined row + schema diff ───────────────────────────────────────
+
+    def test_combined_schema_and_row_diff(self):
+        output = self.get_output([
+            'examples/diff_schema_base.csv', 'examples/diff_schema_added_changed.csv',
+            '-c', 'id', '--format', 'jsonl',
+        ])
+        events = self._parse_jsonl(output)
+        event_types = [e['event'] for e in events]
+        self.assertEqual(event_types[0], 'summary')
+        self.assertIn('schema', event_types)
+        self.assertIn('row', event_types)
+        # schema event must come before row events
+        schema_idx = event_types.index('schema')
+        first_row_idx = event_types.index('row')
+        self.assertLess(schema_idx, first_row_idx)
+
+    # ── --no-schema-check suppresses schema event ────────────────────────
+
+    def test_no_schema_check_suppresses_schema_event(self):
+        output = self.get_output([
+            'examples/diff_schema_base.csv', 'examples/diff_schema_added_changed.csv',
+            '-c', 'id', '--format', 'jsonl', '--no-schema-check',
+        ])
+        events = self._parse_jsonl(output)
+        self.assertFalse(events[0]['schema_changed'])
+        self.assertFalse(any(e['event'] == 'schema' for e in events))
+
+    # ── Composite key shape ──────────────────────────────────────────────
+
+    def test_composite_key_shape(self):
+        output = self.get_output([
+            'examples/diff_composite_a.csv', 'examples/diff_composite_b.csv',
+            '-c', 'order_id,line_no', '--format', 'jsonl',
+        ])
+        events = self._parse_jsonl(output)
+        row_events = [e for e in events if e['event'] == 'row']
+        self.assertTrue(len(row_events) > 0)
+        for ev in row_events:
+            self.assertIn('order_id', ev['key'])
+            self.assertIn('line_no', ev['key'])
+
+    # ── No-key positional key shape: {"row": N} ─────────────────────────
+
+    def test_positional_key_shape(self):
+        output = self.get_output([
+            'examples/diff_pos_a.csv', 'examples/diff_pos_b.csv',
+            '--format', 'jsonl',
+        ])
+        events = self._parse_jsonl(output)
+        row_events = [e for e in events if e['event'] == 'row']
+        self.assertTrue(len(row_events) > 0)
+        for ev in row_events:
+            self.assertIn('row', ev['key'])
+            self.assertIsInstance(ev['key']['row'], int)
+
+    # ── Decimal / date serialization via default_str_decimal ────────────
+
+    def test_decimal_serialization_via_default_str_decimal(self):
+        # Without -I, agate infers the price column as Decimal; render_jsonl must
+        # serialize it via default_str_decimal (not raise TypeError from json.dumps).
+        output = self.get_output([
+            'examples/diff_a.csv', 'examples/diff_b.csv',
+            '-c', 'id', '--format', 'jsonl',
+        ])
+        events = self._parse_jsonl(output)
+        changed = [e for e in events if e.get('status') == 'changed']
+        self.assertTrue(len(changed) > 0)
+        for ev in changed:
+            if 'price' in ev['fields']:
+                self.assertIsInstance(ev['fields']['price']['left'], str)
+                self.assertIsInstance(ev['fields']['price']['right'], str)
+
+    # ── Exit codes unchanged ─────────────────────────────────────────────
+
+    def test_exit_code_0_equal_files(self):
+        code = self._exit_code_for(
+            ['examples/diff_a.csv', 'examples/diff_a.csv', '-c', 'id', '--format', 'jsonl'])
+        self.assertEqual(code, 0)
+
+    def test_exit_code_1_differences(self):
+        code = self._exit_code_for(
+            ['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'id', '--format', 'jsonl'])
+        self.assertEqual(code, 1)
+
+    def test_exit_code_2_bad_key(self):
+        code = self._exit_code_for(
+            ['examples/diff_a.csv', 'examples/diff_b.csv', '-c', 'nonexistent', '--format', 'jsonl'])
+        self.assertEqual(code, 2)
+
+    # ── render_jsonl unit test: engine independence ──────────────────────
+
+    def test_render_jsonl_engine_unit(self):
+        """render_jsonl can be called directly on a DiffResult without the CLI."""
+        schema = SchemaDelta(added=[], removed=[], reordered=False, common=['name', 'score'])
+        row_diffs = [
+            RowDelta(status='changed', key=(1,), fields={'score': (10, 20)}),
+            RowDelta(status='added', key=(2,), fields={'name': (None, 'Bob'), 'score': (None, 30)}),
+            RowDelta(status='removed', key=(3,), fields={'name': ('Alice', None), 'score': (5, None)}),
+        ]
+        result = DiffResult(schema=schema, row_diffs=row_diffs, unchanged_count=0, compared_count=2)
+        buf = io.StringIO()
+        render_jsonl(result, ['id'], buf, show_schema=False)
+        events = [json.loads(line) for line in buf.getvalue().splitlines() if line]
+        self.assertEqual(events[0]['event'], 'summary')
+        self.assertEqual(events[0]['changed'], 1)
+        self.assertEqual(events[0]['added'], 1)
+        self.assertEqual(events[0]['removed'], 1)
+        changed_ev = next(e for e in events if e.get('status') == 'changed')
+        self.assertEqual(changed_ev['fields']['score'], {'left': 10, 'right': 20})
+        added_ev = next(e for e in events if e.get('status') == 'added')
+        self.assertEqual(added_ev['fields']['name'], 'Bob')
+        removed_ev = next(e for e in events if e.get('status') == 'removed')
+        self.assertEqual(removed_ev['fields']['name'], 'Alice')
