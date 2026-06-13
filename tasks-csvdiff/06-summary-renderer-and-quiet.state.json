@@ -1,0 +1,89 @@
+{
+  "task_id": "06-summary-renderer-and-quiet",
+  "task_path": "./tasks-csvdiff/done/06-summary-renderer-and-quiet.md",
+  "current_stage": "done",
+  "stages_completed": ["load", "plan", "branch", "implement", "tests", "verify", "review", "checkpoint", "commit", "pr", "handoff"],
+  "started_at": "2026-06-12T00:00:00Z",
+  "updated_at": "2026-06-12T00:10:00Z",
+  "completed_at": "2026-06-12T00:10:00Z",
+  "attempts": {
+    "load": 1,
+    "plan": 1,
+    "branch": 1,
+    "implement": 1,
+    "tests": 1,
+    "verify": 1,
+    "review": 1,
+    "checkpoint": 1,
+    "commit": 1,
+    "pr": 1,
+    "handoff": 1
+  },
+  "last_error": null,
+  "files_changed": [
+    "csvkit/utilities/csvdiff.py",
+    "tests/test_utilities/test_csvdiff.py"
+  ],
+  "tdd_path": "./TDD-csvdiff.md",
+  "tdd_sections_read": ["§4a", "§4b", "§4h"],
+  "dependencies_verified": ["01-walking-skeleton-keyed-csvdiff"],
+  "prior_done_md_read": [
+    "./tasks-csvdiff/01-walking-skeleton-keyed-csvdiff.done.md",
+    "./tasks-csvdiff/05-jsonl-renderer.done.md"
+  ],
+  "plan_mode": "presented-approved",
+  "plan_approved_at": "2026-06-12T00:00:30Z",
+  "branch": "feat/csvdiff-summary-quiet",
+  "branch_strategy": "new",
+  "branch_base": "feat/csvdiff-jsonl-renderer",
+  "branch_decided_in_plan": true,
+  "branch_decided_at": "2026-06-12T00:01:00Z",
+  "review_gate_preference": "conditional",
+  "verify_commands": [
+    {"cmd": "pytest --cov csvkit tests/test_utilities/test_csvdiff.py", "passed": true},
+    {"cmd": "pytest --cov csvkit", "passed": true},
+    {"cmd": "flake8 csvkit/ tests/", "passed": true},
+    {"cmd": "isort csvkit/ tests/ --check-only", "passed": true}
+  ],
+  "review_rounds": [
+    {
+      "round": 1,
+      "verdict": "APPROVE",
+      "findings": [
+        {"severity": "minor", "area": "testing", "summary": "test_quiet_stderr_on_error used bad-key path not malformed CSV", "addressed": true},
+        {"severity": "nit", "area": "testing", "summary": "vacuous per-row check in test_summary_with_schema_change_shows_banner", "addressed": true},
+        {"severity": "nit", "area": "testing", "summary": "no test for --quiet + schema-only diff", "addressed": true}
+      ],
+      "rebuttals": []
+    }
+  ],
+  "review_skipped": false,
+  "commit_sha": "d4e382d",
+  "pr_url": "https://github.com/nadavhdev/csvkit/pull/10",
+  "tdd_correlation": {
+    "--format summary emits headline only": "§4h render_summary",
+    "--format summary shows schema changed marker": "§4h render_summary",
+    "--format summary same exit codes": "§4b Exit codes",
+    "--quiet produces zero bytes on stdout": "§4a Command surface",
+    "--quiet preserves exit codes": "§4b Exit codes",
+    "--quiet does not suppress stderr": "§4b Exit codes",
+    "-q short form is quotechar not quiet": "§4a Flag-collision audit"
+  },
+  "self_check": {
+    "items": [
+      {"item": "clean names", "status": "yes"},
+      {"item": "single responsibility", "status": "yes"},
+      {"item": "SOLID seams", "status": "yes"},
+      {"item": "decoupling", "status": "yes"},
+      {"item": "reuse", "status": "yes"},
+      {"item": "readability", "status": "yes"},
+      {"item": "extendability", "status": "yes"},
+      {"item": "maintainability", "status": "yes"},
+      {"item": "security at boundaries", "status": "yes", "note": "N/A - no external inputs added"},
+      {"item": "error handling", "status": "yes"},
+      {"item": "no PII in logs", "status": "yes"},
+      {"item": "scope discipline", "status": "yes"}
+    ],
+    "deferred": []
+  }
+}

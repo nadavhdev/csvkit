@@ -1,8 +1,8 @@
 {
   "task_id": "07-docs-changelog-experimental-rollout",
   "task_path": "./tasks-csvdiff/07-docs-changelog-experimental-rollout.md",
-  "current_stage": "implement",
-  "stages_completed": ["load", "plan", "branch"],
+  "current_stage": "done",
+  "stages_completed": ["load", "plan", "branch", "implement", "tests", "verify", "review", "checkpoint", "commit", "pr", "handoff"],
   "started_at": "2026-06-13T00:00:00Z",
   "updated_at": "2026-06-13T00:01:00Z",
   "completed_at": null,
