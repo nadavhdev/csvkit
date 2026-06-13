@@ -120,9 +120,17 @@ defaults for this project.
 
 ### Total score
 
+Each dimension's **contribution** is its score scaled by its weight as a
+fraction, so contributions are themselves on a 0–10 scale and add up directly:
+
 ```
-total = sum(dimension_score * weight) / 100
+contribution = dimension_score * (weight / 100)   # e.g. 9.0 * 0.15 = 1.35
+total        = sum(contribution)                   # already 0–10, no extra divide
 ```
+
+Do **not** display `score * weight` with weight as a whole number (e.g. `135`);
+that un-normalized form forces a confusing "divide by 100" at the end. Report the
+normalized `contribution` (two decimals) in every place the breakdown is shown.
 
 The total is on a 0–10 scale (one decimal). Letter grade:
 
@@ -272,8 +280,8 @@ sentence and a citation. **Any FAIL caps the overall letter at F.**
 
 ### 5. Compute the total and the letter grade
 
-1. For each dimension, compute `weighted = score * weight`.
-2. `total = sum(weighted) / 100`, one decimal.
+1. For each dimension, compute `contribution = score * (weight / 100)`, two decimals.
+2. `total = sum(contribution)`, one decimal.
 3. Derive the letter grade from the total.
 4. **If any bar A–I is FAIL, override the letter grade to F.**
 
@@ -578,10 +586,10 @@ code {
           <td class="num">{{weight_pct}}%</td><td class="num">{{score}}</td>
           <td><span class="bar-bg"><span class="bar-fg bucket-{{bucket_class_short}}" style="width: {{score_pct}}%"></span></span></td>
           <td><span class="pill pill-{{bucket_class_short}}">{{bucket_label}}</span></td>
-          <td class="num">{{weighted}}</td>
+          <td class="num">{{contribution}}</td>
         </tr>
         <tr style="border-top: 2px solid var(--border);">
-          <td colspan="6" style="text-align: right; color: var(--muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.08em;">Total (sum / 100)</td>
+          <td colspan="6" style="text-align: right; color: var(--muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.08em;">Total (weighted sum, 0–10)</td>
           <td class="num"><b>{{total_score}}</b></td>
         </tr>
       </tbody>
@@ -610,7 +618,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p>{{rationale_html}}</p>
-    <div class="math">score {{score}} × weight {{weight_pct}}% = contribution {{weighted}}</div>
+    <div class="math">score {{score}} × weight {{weight_pct}}% = contribution {{contribution}}</div>
 
     <table class="findings">
       <colgroup>

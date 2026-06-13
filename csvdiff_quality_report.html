@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>csvdiff — csvkit feature review</title>
 <style>
-:r
+:root {
   --bg:#0b1020; --panel:#131a30; --border:#2a3358; --fg:#e5e7eb; --muted:#9ca3af;
   --green:#22c55e; --emerald:#10b981; --red:#ef4444; --orange:#f97316;
   --yellow:#eab308; --blue:#60a5fa; --purple:#a78bfa; --pink:#f472b6;
@@ -216,17 +216,17 @@ code {
         <tr><th>Dim</th><th>Name</th><th class="num">Weight</th><th class="num">Score</th><th>Visual</th><th>Bucket</th><th class="num">Contribution</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>D1</code></td><td>Modeling</td><td class="num">15%</td><td class="num">9.0</td><td><span class="bar-bg"><span class="bar-fg bucket-exceptional" style="width: 90%"></span></span></td><td><span class="pill pill-exceptional">Exceptional</span></td><td class="num">135.0</td></tr>
-        <tr><td><code>D2</code></td><td>Package structuring</td><td class="num">3%</td><td class="num">7.5</td><td><span class="bar-bg"><span class="bar-fg bucket-good" style="width: 75%"></span></span></td><td><span class="pill pill-good">Good</span></td><td class="num">22.5</td></tr>
-        <tr><td><code>D3</code></td><td>Component separation</td><td class="num">8%</td><td class="num">7.0</td><td><span class="bar-bg"><span class="bar-fg bucket-good" style="width: 70%"></span></span></td><td><span class="pill pill-good">Good</span></td><td class="num">56.0</td></tr>
-        <tr><td><code>D4</code></td><td>Reuse</td><td class="num">15%</td><td class="num">8.5</td><td><span class="bar-bg"><span class="bar-fg bucket-excellent" style="width: 85%"></span></span></td><td><span class="pill pill-excellent">Excellent</span></td><td class="num">127.5</td></tr>
-        <tr><td><code>D5</code></td><td>Testing coverage</td><td class="num">20%</td><td class="num">6.5</td><td><span class="bar-bg"><span class="bar-fg bucket-ok" style="width: 65%"></span></span></td><td><span class="pill pill-ok">OK</span></td><td class="num">130.0</td></tr>
-        <tr><td><code>D6</code></td><td>Observability</td><td class="num">15%</td><td class="num">9.0</td><td><span class="bar-bg"><span class="bar-fg bucket-exceptional" style="width: 90%"></span></span></td><td><span class="pill pill-exceptional">Exceptional</span></td><td class="num">135.0</td></tr>
-        <tr><td><code>D7</code></td><td>CLI &amp; flag discipline</td><td class="num">6%</td><td class="num">7.5</td><td><span class="bar-bg"><span class="bar-fg bucket-good" style="width: 75%"></span></span></td><td><span class="pill pill-good">Good</span></td><td class="num">45.0</td></tr>
-        <tr><td><code>D8</code></td><td>Error model &amp; exit codes</td><td class="num">6%</td><td class="num">8.5</td><td><span class="bar-bg"><span class="bar-fg bucket-excellent" style="width: 85%"></span></span></td><td><span class="pill pill-excellent">Excellent</span></td><td class="num">51.0</td></tr>
-        <tr><td><code>D9</code></td><td>Data semantics</td><td class="num">7%</td><td class="num">8.5</td><td><span class="bar-bg"><span class="bar-fg bucket-excellent" style="width: 85%"></span></span></td><td><span class="pill pill-excellent">Excellent</span></td><td class="num">59.5</td></tr>
-        <tr><td><code>D10</code></td><td>Documentation &amp; registration</td><td class="num">5%</td><td class="num">5.5</td><td><span class="bar-bg"><span class="bar-fg bucket-bad" style="width: 55%"></span></span></td><td><span class="pill pill-bad">Bad</span></td><td class="num">27.5</td></tr>
-        <tr style="border-top: 2px solid var(--border);"><td colspan="6" style="text-align: right; color: var(--muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.08em;">Total (sum / 100)</td><td class="num"><b>7.9</b></td></tr>
+        <tr><td><code>D1</code></td><td>Modeling</td><td class="num">15%</td><td class="num">9.0</td><td><span class="bar-bg"><span class="bar-fg bucket-exceptional" style="width: 90%"></span></span></td><td><span class="pill pill-exceptional">Exceptional</span></td><td class="num">1.35</td></tr>
+        <tr><td><code>D2</code></td><td>Package structuring</td><td class="num">3%</td><td class="num">7.5</td><td><span class="bar-bg"><span class="bar-fg bucket-good" style="width: 75%"></span></span></td><td><span class="pill pill-good">Good</span></td><td class="num">0.23</td></tr>
+        <tr><td><code>D3</code></td><td>Component separation</td><td class="num">8%</td><td class="num">7.0</td><td><span class="bar-bg"><span class="bar-fg bucket-good" style="width: 70%"></span></span></td><td><span class="pill pill-good">Good</span></td><td class="num">0.56</td></tr>
+        <tr><td><code>D4</code></td><td>Reuse</td><td class="num">15%</td><td class="num">8.5</td><td><span class="bar-bg"><span class="bar-fg bucket-excellent" style="width: 85%"></span></span></td><td><span class="pill pill-excellent">Excellent</span></td><td class="num">1.28</td></tr>
+        <tr><td><code>D5</code></td><td>Testing coverage</td><td class="num">20%</td><td class="num">6.5</td><td><span class="bar-bg"><span class="bar-fg bucket-ok" style="width: 65%"></span></span></td><td><span class="pill pill-ok">OK</span></td><td class="num">1.30</td></tr>
+        <tr><td><code>D6</code></td><td>Observability</td><td class="num">15%</td><td class="num">9.0</td><td><span class="bar-bg"><span class="bar-fg bucket-exceptional" style="width: 90%"></span></span></td><td><span class="pill pill-exceptional">Exceptional</span></td><td class="num">1.35</td></tr>
+        <tr><td><code>D7</code></td><td>CLI &amp; flag discipline</td><td class="num">6%</td><td class="num">7.5</td><td><span class="bar-bg"><span class="bar-fg bucket-good" style="width: 75%"></span></span></td><td><span class="pill pill-good">Good</span></td><td class="num">0.45</td></tr>
+        <tr><td><code>D8</code></td><td>Error model &amp; exit codes</td><td class="num">6%</td><td class="num">8.5</td><td><span class="bar-bg"><span class="bar-fg bucket-excellent" style="width: 85%"></span></span></td><td><span class="pill pill-excellent">Excellent</span></td><td class="num">0.51</td></tr>
+        <tr><td><code>D9</code></td><td>Data semantics</td><td class="num">7%</td><td class="num">8.5</td><td><span class="bar-bg"><span class="bar-fg bucket-excellent" style="width: 85%"></span></span></td><td><span class="pill pill-excellent">Excellent</span></td><td class="num">0.60</td></tr>
+        <tr><td><code>D10</code></td><td>Documentation &amp; registration</td><td class="num">5%</td><td class="num">5.5</td><td><span class="bar-bg"><span class="bar-fg bucket-bad" style="width: 55%"></span></span></td><td><span class="pill pill-bad">Bad</span></td><td class="num">0.28</td></tr>
+        <tr style="border-top: 2px solid var(--border);"><td colspan="6" style="text-align: right; color: var(--muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.08em;">Total (weighted sum, 0–10)</td><td class="num"><b>7.9</b></td></tr>
       </tbody>
     </table>
   </div>
@@ -261,7 +261,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p>Clean extension of csvkit primitives (tables, rows, columns, typed cells) with one well-named addition — "key column(s)" for row identity — and an explicit schema-vs-row split for results. The <code>epilog</code> at <code>csvdiff.py:16-22</code> matches the guideline's 9–10 calibration anchor verbatim.</p>
-    <div class="math">score 9.0 × weight 15% = contribution 135.0</div>
+    <div class="math">score 9.0 × weight 15% = contribution 1.35</div>
 
     <table class="findings">
       <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
@@ -342,7 +342,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p>Every conventional location is filled. Helpers are inside the utility module — appropriate because they aren't reused elsewhere. Fixture naming discipline lifts what would otherwise be a flat-Good dimension.</p>
-    <div class="math">score 7.5 × weight 3% = contribution 22.5</div>
+    <div class="math">score 7.5 × weight 3% = contribution 0.23</div>
 
     <table class="findings">
       <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
@@ -416,7 +416,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p><code>main()</code> follows the four-phase order; neither <code>__init__</code> nor <code>run()</code> is overridden. The <code>try/finally</code> around each file's <code>from_csv</code> is stricter than the template. Held below Excellent by the duplicate-key validation living in the transform phase.</p>
-    <div class="math">score 7.0 × weight 8% = contribution 56.0</div>
+    <div class="math">score 7.0 × weight 8% = contribution 0.56</div>
 
     <table class="findings">
       <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
@@ -508,7 +508,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p>Every applicable base-class facility is reused; no type tester constructed by hand; no file opened with raw <code>open()</code>. Lifted to Excellent by <code>_resolve_key_ids</code>'s thoughtful divergence to attach a file label to each column-resolution error.</p>
-    <div class="math">score 8.5 × weight 15% = contribution 127.5</div>
+    <div class="math">score 8.5 × weight 15% = contribution 1.28</div>
 
     <table class="findings">
       <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
@@ -603,7 +603,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p>Broad test surface — 19 tests covering keyed/positional, schema diffs, typed equality (both branches), composite keys, all three formats, stdin, both exit codes. Held to OK by one structural defect that matches a guideline calibration anchor: <code>default_args</code> makes <code>EmptyFileTests</code> a vacuous pass.</p>
-    <div class="math">score 6.5 × weight 20% = contribution 130.0</div>
+    <div class="math">score 6.5 × weight 20% = contribution 1.30</div>
 
     <table class="findings">
       <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
@@ -753,7 +753,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p>Error messages in csvdiff are the best in the suite for a multi-file tool — they name both column and file, and the duplicate-key message packs three pieces of context into one sentence. Standard stderr discipline holds; base-class exception handler is not overridden.</p>
-    <div class="math">score 9.0 × weight 15% = contribution 135.0</div>
+    <div class="math">score 9.0 × weight 15% = contribution 1.35</div>
 
     <table class="findings">
       <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
@@ -834,7 +834,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p>No inherited common-arg flag redefined; suite-consistent letter choices; help text is complete-sentence prose. Held to Good by two undocumented output-flag interactions and one semantic overlap with csvjson's <code>-k</code>.</p>
-    <div class="math">score 7.5 × weight 6% = contribution 45.0</div>
+    <div class="math">score 7.5 × weight 6% = contribution 0.45</div>
 
     <table class="findings">
       <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
@@ -926,7 +926,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p>Introduces a new "differences found" exit code and discloses it textbook-style. Named constant, three-surface disclosure (epilog + rst + tests), <code>ColumnIdentifierError</code> caught and rerouted via <code>argparser.error</code>.</p>
-    <div class="math">score 8.5 × weight 6% = contribution 51.0</div>
+    <div class="math">score 8.5 × weight 6% = contribution 0.51</div>
 
     <table class="findings">
       <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
@@ -1004,7 +1004,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p>Type handling correct and visible to the user. <code>get_column_types()</code> threads all inheritance flags; <code>-I</code> documented in user terms in both help text and rst — depth most csvkit tools' docs don't reach.</p>
-    <div class="math">score 8.5 × weight 7% = contribution 59.5</div>
+    <div class="math">score 8.5 × weight 7% = contribution 0.60</div>
 
     <table class="findings">
       <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
@@ -1081,7 +1081,7 @@ code {
   <div class="dim-body">
     <h4>Rationale</h4>
     <p>The "definition of done" checklist is partially met — scripts entry, man page, rst with all sections, cli.rst link, CHANGELOG. Two FAIL signals drop the score: CI smoke tests not updated, and AUTHORS not updated. The exit-code contract is disclosed in three surfaces (one Excellent row), but otherwise the dimension is just standard plus two recoverable Bad rows.</p>
-    <div class="math">score 5.5 × weight 5% = contribution 27.5</div>
+    <div class="math">score 5.5 × weight 5% = contribution 0.28</div>
 
     <table class="findings">
       <colgroup><col class="col-aspect"><col class="col-details"><col class="col-grade"><col class="col-suggestions"></colgroup>
