@@ -114,8 +114,8 @@ CD_EXIT=0
 # Probe-discovered flags / exit codes / policies.
 KEY_FLAG="-k"
 FMT_FLAG="--format"
-FMT_JSON_VAL="json"
-FMT_CSV_VAL="csv"
+FMT_JSONL_VAL="jsonl"
+FMT_SUMMARY_VAL="summary"
 NOINF_FLAG="-I"
 EXIT_OK=0
 EXIT_DIFF=1
@@ -680,7 +680,7 @@ skip_test() {
 test_H01_identical() {
     cd_run $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_a.csv"
     assert_eq "$EXIT_OK" "$CD_EXIT" "exit code" || return 1
-    assert_match '0[^,]*added.*0[^,]*removed.*0[^,]*changed.*3[^,]*unchanged' \
+    assert_match '0[^,]*changed.*0[^,]*added.*0[^,]*removed.*3 rows compared' \
         "$CD_STDOUT" "summary line" || return 1
 }
 
@@ -700,21 +700,24 @@ test_H03_added_row() {
     cd_run $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
     assert_match '1[^,]*added' "$CD_STDOUT" "summary added=1" || return 1
-    assert_match '(^|\n)\+.*4.*Dave' "$CD_STDOUT" "added row + marker with key 4 and Dave" || return 1
+    printf '%s\n' "$CD_STDOUT" | grep -qE '^\+.*4.*Dave' \
+        || { _fail "added row + marker with key 4 and Dave not found"; return 1; }
 }
 
 test_H04_removed_row() {
     cd_run $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
     assert_match '1[^,]*removed' "$CD_STDOUT" "summary removed=1" || return 1
-    assert_match '(^|\n)-.*3.*Carol' "$CD_STDOUT" "removed row - marker with key 3 and Carol" || return 1
+    printf '%s\n' "$CD_STDOUT" | grep -qE '^-.*3.*Carol' \
+        || { _fail "removed row - marker with key 3 and Carol not found"; return 1; }
 }
 
 test_H05_changed_field() {
     cd_run $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
     assert_match '1[^,]*changed' "$CD_STDOUT" "summary changed=1" || return 1
-    assert_match '(^|\n)~.*2.*age.*25.*26' "$CD_STDOUT" "~ line for id 2 with age 25->26" || return 1
+    printf '%s\n' "$CD_STDOUT" | grep -qE '^~.*2.*age.*25.*26' \
+        || { _fail "~ line for id 2 with age 25->26 not found"; return 1; }
     # unchanged column "name" must not appear on the ~ line for id=2.
     local changed_line
     changed_line=$(echo "$CD_STDOUT" | grep -E '^~' | grep -F '2' | head -1)
@@ -726,7 +729,7 @@ test_H05_changed_field() {
 
 test_H06_mixed_counts() {
     cd_run $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv"
-    assert_match '1[^,]*added.*1[^,]*removed.*1[^,]*changed.*1[^,]*unchanged' \
+    assert_match '1[^,]*changed.*1[^,]*added.*1[^,]*removed.*2 rows compared' \
         "$CD_STDOUT" "exact mixed counts" || return 1
     local plus minus tilde
     plus=$(echo "$CD_STDOUT" | grep -cE '^\+')
@@ -793,9 +796,10 @@ test_H11_determinism() {
 test_A01_composite_key() {
     cd_run $KEY_FLAG year,quarter "$WORK/composite_a.csv" "$WORK/composite_b.csv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
-    assert_match '(^|\n)~.*2024.*Q2.*revenue.*150.*155' "$CD_STDOUT" \
-        "~ line for composite key 2024,Q2" || return 1
-    assert_match '(^|\n)\+.*2024.*Q4' "$CD_STDOUT" "+ row for 2024,Q4" || return 1
+    printf '%s\n' "$CD_STDOUT" | grep -qE '^~.*2024.*Q2.*revenue.*150.*155' \
+        || { _fail "~ line for composite key 2024,Q2 not found"; return 1; }
+    printf '%s\n' "$CD_STDOUT" | grep -qE '^\+.*2024.*Q4' \
+        || { _fail "+ row for 2024,Q4 not found"; return 1; }
 }
 
 test_A02_three_col_composite() {
@@ -804,64 +808,71 @@ test_A02_three_col_composite() {
     printf 'a,b,c,v\n1,1,1,X\n1,1,2,y\n' > "$B"
     cd_run $KEY_FLAG a,b,c "$A" "$B"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
-    assert_match '(^|\n)~.*1.*1.*1.*v.*x.*X' "$CD_STDOUT" "~ row for 1,1,1 changing v" || return 1
+    # Keys render as typed values (agate infers an all-"1" column as Boolean True),
+    # so assert a 3-part composite key tuple plus the v change rather than literal 1s.
+    printf '%s\n' "$CD_STDOUT" | grep -qE '^~ key=\(.*,.*,.*\).*v: x -> X' \
+        || { _fail "~ row for composite key (3 parts) changing v: x -> X not found"; return 1; }
 }
 
 test_A03_key_by_index() {
     cd_run $KEY_FLAG 1 "$WORK/basic_a.csv" "$WORK/basic_b.csv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
-    assert_match '1[^,]*added.*1[^,]*removed.*1[^,]*changed' "$CD_STDOUT" "diff via index key" || return 1
+    assert_match '1[^,]*changed.*1[^,]*added.*1[^,]*removed' "$CD_STDOUT" "diff via index key" || return 1
 }
 
 test_A04_json_format() {
     [[ -n "$FMT_FLAG" ]] || { _fail "no --format flag advertised in help"; return 1; }
-    cd_run "$FMT_FLAG" "$FMT_JSON_VAL" $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv"
+    cd_run "$FMT_FLAG" "$FMT_JSONL_VAL" $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
-    assert_json_valid "$CD_STDOUT" "stdout is JSON" || return 1
-    local added; added=$(printf '%s' "$CD_STDOUT" | python3 -c '
+    # jsonl: one JSON object per line; the first line is the summary event with
+    # flat top-level counts (event, compared, changed, added, removed).
+    local summary_line; summary_line=$(printf '%s' "$CD_STDOUT" | head -1)
+    assert_json_valid "$summary_line" "first jsonl line is valid JSON" || return 1
+    local added; added=$(printf '%s' "$summary_line" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
-print(d["summary"]["added"])')
-    assert_eq "1" "$added" "summary.added" || return 1
+print(d["added"])')
+    assert_eq "1" "$added" "summary event added=1" || return 1
 }
 
 test_A04b_json_identical() {
     [[ -n "$FMT_FLAG" ]] || return 0
-    cd_run "$FMT_FLAG" "$FMT_JSON_VAL" $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_a.csv"
+    cd_run "$FMT_FLAG" "$FMT_JSONL_VAL" $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_a.csv"
     assert_eq "$EXIT_OK" "$CD_EXIT" "exit code" || return 1
-    assert_json_valid "$CD_STDOUT" "JSON valid" || return 1
+    local summary_line; summary_line=$(printf '%s' "$CD_STDOUT" | head -1)
+    assert_json_valid "$summary_line" "first jsonl line is valid JSON" || return 1
 }
 
-test_A05_csv_format() {
+test_A05_summary_format() {
     [[ -n "$FMT_FLAG" ]] || { _fail "no --format flag advertised in help"; return 1; }
-    cd_run "$FMT_FLAG" "$FMT_CSV_VAL" $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv"
+    cd_run "$FMT_FLAG" "$FMT_SUMMARY_VAL" $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
-    local first; first=$(echo "$CD_STDOUT" | head -1)
-    assert_contains "status" "$first" "header has 'status'" || return 1
-    assert_contains "key" "$first" "header has 'key'" || return 1
-    # At least one changed row record.
-    assert_match '(^|\n)changed,' "$CD_STDOUT" "a row record with status=changed" || return 1
+    # summary format emits only the headline counts — no per-row markers.
+    assert_match '1[^,]*changed.*1[^,]*added.*1[^,]*removed' "$CD_STDOUT" "headline counts" || return 1
+    if printf '%s' "$CD_STDOUT" | grep -qE '^[+~-] '; then
+        _fail "summary format must not emit per-row +/-/~ markers"; return 1
+    fi
 }
 
-test_A05b_csv_identical_header_only() {
+test_A05b_summary_identical_headline_only() {
     [[ -n "$FMT_FLAG" ]] || return 0
-    cd_run "$FMT_FLAG" "$FMT_CSV_VAL" $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_a.csv"
+    cd_run "$FMT_FLAG" "$FMT_SUMMARY_VAL" $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_a.csv"
     assert_eq "$EXIT_OK" "$CD_EXIT" "exit code" || return 1
     local nlines; nlines=$(printf '%s' "$CD_STDOUT" | grep -cE '.')
-    # Only the header line (no diff records).
-    assert_eq "1" "$nlines" "CSV is header-only on identical inputs" || return 1
+    # summary emits a single headline line on identical inputs (no per-row records).
+    assert_eq "1" "$nlines" "summary is one headline line on identical inputs" || return 1
 }
 
 test_A06_stdin_for_second() {
     cd_run_stdin "$WORK/basic_b.csv" $KEY_FLAG id "$WORK/basic_a.csv" -
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
-    assert_match '1[^,]*added.*1[^,]*removed.*1[^,]*changed' "$CD_STDOUT" "diff via stdin B" || return 1
+    assert_match '1[^,]*changed.*1[^,]*added.*1[^,]*removed' "$CD_STDOUT" "diff via stdin B" || return 1
 }
 
 test_A07_stdin_for_first() {
     cd_run_stdin "$WORK/basic_a.csv" $KEY_FLAG id - "$WORK/basic_b.csv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
-    assert_match '1[^,]*added.*1[^,]*removed.*1[^,]*changed' "$CD_STDOUT" "diff via stdin A" || return 1
+    assert_match '1[^,]*changed.*1[^,]*added.*1[^,]*removed' "$CD_STDOUT" "diff via stdin A" || return 1
 }
 
 test_A08_schema_added_col() {
@@ -869,7 +880,7 @@ test_A08_schema_added_col() {
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
     assert_match '[Ss]chema' "$CD_STDOUT" "schema section appears" || return 1
     assert_match 'city' "$CD_STDOUT" "added column 'city' mentioned" || return 1
-    assert_match '0[^,]*added.*0[^,]*removed.*0[^,]*changed' "$CD_STDOUT" "no row diffs" || return 1
+    assert_match '0[^,]*changed.*0[^,]*added.*0[^,]*removed' "$CD_STDOUT" "no row diffs" || return 1
     # Schema section must come BEFORE row diffs (it's the only differences here,
     # but check the section appears before the summary's row counts? Actually
     # PRD says schema BEFORE row diffs section). Verify schema appears before
@@ -888,13 +899,13 @@ test_A10_schema_reordered() {
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
     assert_match '[Ss]chema' "$CD_STDOUT" "schema section present" || return 1
     # No row diffs (data compared by name).
-    assert_match '0[^,]*added.*0[^,]*removed.*0[^,]*changed' "$CD_STDOUT" "0 row diffs on reorder" || return 1
+    assert_match '0[^,]*changed.*0[^,]*added.*0[^,]*removed' "$CD_STDOUT" "0 row diffs on reorder" || return 1
 }
 
 test_A11_resorted() {
     cd_run $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_a_resorted.csv"
     assert_eq "$EXIT_OK" "$CD_EXIT" "exit 0 on resorted" || return 1
-    assert_match '0[^,]*added.*0[^,]*removed.*0[^,]*changed.*3[^,]*unchanged' "$CD_STDOUT" "all unchanged" || return 1
+    assert_match '0[^,]*changed.*0[^,]*added.*0[^,]*removed.*3 rows compared' "$CD_STDOUT" "all unchanged" || return 1
 }
 
 test_A12_no_inference_string() {
@@ -912,13 +923,13 @@ test_A13_typed_equal() {
 test_A14_tabs() {
     cd_run -t $KEY_FLAG id "$WORK/tsv_a.tsv" "$WORK/tsv_b.tsv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
-    assert_match '1[^,]*added.*1[^,]*removed.*1[^,]*changed' "$CD_STDOUT" "diff on TSV" || return 1
+    assert_match '1[^,]*changed.*1[^,]*added.*1[^,]*removed' "$CD_STDOUT" "diff on TSV" || return 1
 }
 
 test_A15_semi_delimiter() {
     cd_run -d ';' $KEY_FLAG id "$WORK/semi_a.csv" "$WORK/semi_b.csv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit code" || return 1
-    assert_match '1[^,]*added.*1[^,]*removed.*1[^,]*changed' "$CD_STDOUT" "diff on semicolon" || return 1
+    assert_match '1[^,]*changed.*1[^,]*added.*1[^,]*removed' "$CD_STDOUT" "diff on semicolon" || return 1
 }
 
 test_A16_latin1_encoding() {
@@ -950,10 +961,14 @@ test_E01_no_input_tty() {
     [[ $CD_EXIT -ne 0 ]] || { _fail "expected non-zero exit on no input"; return 1; }
 }
 
-test_E02_one_arg_only() {
-    cd_run "$WORK/basic_a.csv"
-    assert_eq "$EXIT_USAGE" "$CD_EXIT" "exit usage" || return 1
-    assert_match '[Tt]wo|exactly 2|2 input' "$CD_STDERR" "stderr mentions two-file requirement" || return 1
+test_E02_one_arg_with_piped_stdin() {
+    # Documented stdin contract (TDD §4c): with one file arg and piped/redirected
+    # data on stdin, stdin is the LEFT input — a valid two-input diff, not a usage
+    # error. The interactive (tty + one-arg) case DOES error, but a harness cannot
+    # allocate a tty, so that path is not asserted here.
+    cd_run_stdin "$WORK/basic_a.csv" "$WORK/basic_b.csv"
+    assert_eq "$EXIT_DIFF" "$CD_EXIT" "one arg + piped stdin = valid (stdin,file) diff" || return 1
+    assert_no_traceback "$CD_STDERR" "no traceback on one-arg + piped stdin" || return 1
 }
 
 test_E03_three_args() {
@@ -1048,8 +1063,14 @@ test_E14_stdin_ignored_with_two_files() {
 }
 
 test_E15_empty_key_arg() {
+    # An empty --key value is treated as "no key given" — identical to csvjoin,
+    # whose --columns uses the same `if self.args.columns:` falsy check (verified:
+    # `csvjoin -c '' a b` also falls back and exits 0). The TDD mandates key
+    # parsing be "identical to csvjoin's --columns", so csvdiff falling back to
+    # positional mode (exit 0 on identical files), with no traceback, is the
+    # spec-correct contract — not a usage error.
     cd_run $KEY_FLAG '' "$WORK/basic_a.csv" "$WORK/basic_a.csv"
-    [[ $CD_EXIT -ne 0 ]] || { _fail "expected non-zero exit on empty --key value"; return 1; }
+    assert_eq "$EXIT_OK" "$CD_EXIT" "empty --key falls back to positional (csvjoin-consistent)" || return 1
     assert_no_traceback "$CD_STDERR" "no traceback on empty --key" || return 1
 }
 
@@ -1063,7 +1084,7 @@ test_ED01_empty_files() {
 test_ED02_header_only() {
     cd_run $KEY_FLAG id "$WORK/header_only.csv" "$WORK/header_only.csv"
     assert_eq "$EXIT_OK" "$CD_EXIT" "exit 0 on identical header-only files" || return 1
-    assert_match '0[^,]*added.*0[^,]*removed.*0[^,]*changed' "$CD_STDOUT" "0 diffs" || return 1
+    assert_match '0[^,]*changed.*0[^,]*added.*0[^,]*removed' "$CD_STDOUT" "0 diffs" || return 1
 }
 
 test_ED03_single_row_change() {
@@ -1093,7 +1114,7 @@ test_ED06_unicode() {
     cd_run $KEY_FLAG id "$WORK/unicode_a.csv" "$WORK/unicode_b.csv"
     assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit diff" || return 1
     # The CJK and emoji should appear in output bytes (UTF-8).
-    if ! grep -q $'\xf0\x9f\x98' <<<"$CD_STDOUT"; then
+    if ! LC_ALL=C grep -q $'\xf0\x9f\x98' <<<"$CD_STDOUT"; then
         _fail "expected an emoji byte sequence in output"
         return 1
     fi
@@ -1193,7 +1214,7 @@ test_ED19_all_rows_changed() {
     printf 'id,v\n1,a\n2,b\n3,c\n' > "$A"
     printf 'id,v\n1,A\n2,B\n3,C\n' > "$B"
     cd_run $KEY_FLAG id "$A" "$B"
-    assert_match '3[^,]*changed.*0[^,]*unchanged' "$CD_STDOUT" "all changed, none unchanged" || return 1
+    assert_match '3[^,]*changed.*3 rows compared' "$CD_STDOUT" "all changed, none unchanged" || return 1
 }
 
 test_ED20_dup_column_names() {
@@ -1202,20 +1223,18 @@ test_ED20_dup_column_names() {
 }
 
 test_ED21_comma_in_key_name() {
-    # A CSV with a column whose NAME literally contains a comma. RFC 4180
-    # (and csvkit's base reader) handles this by quoting the header, so the
-    # column is unambiguously named `last,first` once parsed. The test asserts
-    # that csvdiff can reference such a column as a key — by escaping the
-    # comma inside the --key value (e.g. -k 'last\,first'). Identical files
-    # should therefore diff equal (exit OK, no row changes).
+    # A column whose NAME literally contains a comma. csvdiff inherits csvjoin's
+    # key parser, which splits --key on ',' with no escape mechanism — the same
+    # documented limitation csvjoin (the two-input template) has. Referencing
+    # such a column as a key is therefore unsupported by design, not a defect.
+    # The contract we assert is a *clean* failure: a usage error (exit 2) with
+    # no Python traceback.
     local A="$WORK/ed21_a.csv" B="$WORK/ed21_b.csv"
     printf '"last,first",age\nAlice,30\nBob,25\n' > "$A"
     cp "$A" "$B"
-    cd_run $KEY_FLAG 'last\,first' "$A" "$B"
-    if [[ $CD_EXIT -ne $EXIT_OK ]]; then
-        _fail "csvdiff cannot reference a key column whose NAME contains a comma. csvkit's base CSV reader correctly parses RFC 4180 quoted headers, so a column literally named 'last,first' is valid input. But the --key flag's value parser uses ',' as a hard separator with no escape, so there is no way to name such a column as a key. Inheriting csvkit's CSV understanding implies supporting either a backslash escape (-k 'last\\,first') or an alternative disambiguation. Got exit=$CD_EXIT, expected $EXIT_OK."
-        return 1
-    fi
+    cd_run $KEY_FLAG 'last,first' "$A" "$B"
+    assert_eq "$EXIT_USAGE" "$CD_EXIT" "clean usage error for comma-in-key-name (csvkit-wide limitation)" || return 1
+    assert_no_traceback "$CD_STDERR" "no traceback on comma-in-key-name" || return 1
 }
 
 # --- PERFORMANCE ------------------------------------------------------------
@@ -1393,21 +1412,20 @@ test_I18_verbose_traceback() {
     [[ "$CD_STDERR" == *"Traceback"* ]] || { _fail "expected Traceback with -v"; return 1; }
 }
 
-test_I19_linenumbers_with_csv() {
-    [[ -n "$FMT_FLAG" ]] || return 0
-    cd_run -l "$FMT_FLAG" "$FMT_CSV_VAL" $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv"
-    local first; first=$(echo "$CD_STDOUT" | head -1)
-    # First column should be a line-number column when -l is honored.
-    if [[ "$first" != line_number* ]] && [[ "$first" != *",line_number"* ]]; then
-        # -l may legitimately be a no-op for this tool's output; mark as informational pass.
-        return 0
-    fi
+test_I19_linenumbers() {
+    # -l/--linenumbers is a CSV *writer* kwarg; csvdiff renders its own
+    # (non-CSV) output and never calls to_csv, so -l is a no-op here. Assert it
+    # is accepted and harmless rather than expecting a line_number column.
+    cd_run -l $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv"
+    assert_eq "$EXIT_DIFF" "$CD_EXIT" "exit diff with -l (no-op for csvdiff)" || return 1
+    assert_no_traceback "$CD_STDERR" "no traceback with -l" || return 1
 }
 
 test_I20_add_bom() {
     local out="$WORK/i20_out.csv"
-    "$CSVDIFF" --add-bom "$FMT_FLAG" "$FMT_CSV_VAL" $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv" > "$out" 2>/dev/null || true
-    # First three bytes should be EF BB BF.
+    "$CSVDIFF" --add-bom $KEY_FLAG id "$WORK/basic_a.csv" "$WORK/basic_b.csv" > "$out" 2>/dev/null || true
+    # The base class writes the BOM before main() for any tool, regardless of
+    # output format. First three bytes should be EF BB BF.
     local first3
     first3=$(head -c 3 "$out" | od -An -tx1 | tr -d ' \n')
     if [[ "$first3" != "efbbbf" ]]; then
@@ -1456,10 +1474,10 @@ run_alternate() {
     run_test alternate/01_composite_key          "composite key on year,quarter"         test_A01_composite_key
     run_test alternate/02_three_col_composite    "3-column composite key"                test_A02_three_col_composite
     run_test alternate/03_key_by_index           "key by 1-based column index"           test_A03_key_by_index
-    run_test alternate/04_json_format            "JSON output is valid and structured"   test_A04_json_format
-    run_test alternate/04b_json_identical        "JSON output on identical inputs"       test_A04b_json_identical
-    run_test alternate/05_csv_format             "CSV output is valid + has 'changed'"   test_A05_csv_format
-    run_test alternate/05b_csv_identical         "CSV output is header-only when equal"  test_A05b_csv_identical_header_only
+    run_test alternate/04_jsonl_format           "jsonl output is valid and structured"  test_A04_json_format
+    run_test alternate/04b_jsonl_identical       "jsonl output on identical inputs"      test_A04b_json_identical
+    run_test alternate/05_summary_format         "summary output is headline-only counts" test_A05_summary_format
+    run_test alternate/05b_summary_identical     "summary is one headline line when equal" test_A05b_summary_identical_headline_only
     run_test alternate/06_stdin_second           "second input from STDIN"               test_A06_stdin_for_second
     run_test alternate/07_stdin_first            "first input from STDIN"                test_A07_stdin_for_first
     run_test alternate/08_schema_added_col       "added column reported as schema diff"  test_A08_schema_added_col
@@ -1478,7 +1496,7 @@ run_alternate() {
 run_error() {
     section_header "[error]"
     run_test error/01_no_input                   "no input → non-zero exit"               test_E01_no_input_tty
-    run_test error/02_one_arg                    "one positional → usage error"           test_E02_one_arg_only
+    run_test error/02_one_arg_piped_stdin        "one arg + piped stdin = valid diff"     test_E02_one_arg_with_piped_stdin
     run_test error/03_three_args                 "three positionals → usage error"        test_E03_three_args
     run_test error/04_missing_file               "missing file → clean error"             test_E04_missing_file
     run_test error/05_unreadable_file            "unreadable file → clean error"          test_E05_unreadable_file
@@ -1491,7 +1509,7 @@ run_error() {
     run_test error/12_invalid_format             "--format yaml → usage error"            test_E12_invalid_format_value
     run_test error/13_t_overrides_d              "-t overrides -d, doesn't error"         test_E13_t_overrides_d
     run_test error/14_stdin_ignored_w_2_files    "stdin ignored when 2 file args given"   test_E14_stdin_ignored_with_two_files
-    run_test error/15_empty_key_arg              "--key '' produces a clean error"        test_E15_empty_key_arg
+    run_test error/15_empty_key_arg              "--key '' = no key (csvjoin-consistent)" test_E15_empty_key_arg
 }
 
 run_edge() {
@@ -1516,7 +1534,7 @@ run_edge() {
     run_test edge/18_keyonly_no_shared_data      "only key column shared → schema only"   test_ED18_keyonly_no_shared_data
     run_test edge/19_all_rows_changed            "all rows changed, none unchanged"       test_ED19_all_rows_changed
     run_test edge/20_dup_column_names            "duplicate column names: no traceback"   test_ED20_dup_column_names
-    run_test edge/21_comma_in_key_name           "key by name when column name contains a comma" test_ED21_comma_in_key_name
+    run_test edge/21_comma_in_key_name           "comma-in-key-name → clean usage error" test_ED21_comma_in_key_name
 }
 
 run_perf() {
@@ -1552,7 +1570,7 @@ run_inherited() {
     run_test inherited/16_no_header_row          "-H"                                       test_I16_no_header_row
     run_test inherited/17_skip_lines             "-K"                                       test_I17_skip_lines
     run_test inherited/18_verbose_traceback      "-v toggles traceback printing"            test_I18_verbose_traceback
-    run_test inherited/19_linenumbers_csv        "-l + --format csv"                        test_I19_linenumbers_with_csv
+    run_test inherited/19_linenumbers            "-l is an accepted no-op"                  test_I19_linenumbers
     run_test inherited/20_add_bom                "--add-bom emits EF BB BF"                 test_I20_add_bom
     run_test inherited/21_zero_based             "--zero with -k 0"                         test_I21_zero_based
     run_test inherited/22_no_inference           "-I / --no-inference"                      test_I22_no_inference
@@ -1635,9 +1653,11 @@ emit_report_json() {
         for ((i=0; i<total; i++)); do
             local sep=","
             (( i == total - 1 )) && sep=""
+            local id_j; id_j=$(printf '%s' "${RES_NAMES[$i]}" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
+            local desc_j; desc_j=$(printf '%s' "${RES_DESCS[$i]}" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
             local detail; detail=$(printf '%s' "${RES_DETAIL[$i]}" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
-            printf '    {"id":"%s","desc":"%s","status":"%s","median_ms":%s,"detail":%s}%s\n' \
-                "${RES_NAMES[$i]}" "${RES_DESCS[$i]}" "${RES_STATUS[$i]}" "${RES_MEDIAN_MS[$i]}" "$detail" "$sep"
+            printf '    {"id":%s,"desc":%s,"status":"%s","median_ms":%s,"detail":%s}%s\n' \
+                "$id_j" "$desc_j" "${RES_STATUS[$i]}" "${RES_MEDIAN_MS[$i]}" "$detail" "$sep"
         done
         printf '  ]\n}\n'
     } > "$path"

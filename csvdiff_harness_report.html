@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>csvdiff test harness report</title>
+<style>
+:root {
+  --bg:#0b1020; --panel:#131a30; --border:#2a3358; --fg:#e5e7eb; --muted:#9ca3af;
+  --green:#22c55e; --red:#ef4444; --yellow:#eab308; --blue:#60a5fa;
+  --mono: 'SF Mono','JetBrains Mono','Menlo','Consolas',monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+header {
+  padding: 32px 40px 24px; border-bottom: 1px solid var(--border);
+  display: flex; gap: 24px; align-items: baseline; justify-content: space-between; flex-wrap: wrap;
+}
+header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+header .meta { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+header .meta div { margin-top: 2px; }
+main { max-width: 1200px; margin: 0 auto; padding: 28px 40px 80px; }
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 18px 20px; transition: border-color 0.15s;
+}
+.card h3 {
+  margin: 0 0 6px; font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+}
+.card .num { font-size: 38px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.card.pass  .num { color: var(--green); }
+.card.fail  .num { color: var(--red); }
+.card.flaky .num { color: var(--yellow); }
+.card.skip  .num { color: var(--muted); }
+.card.fail { border-color: rgba(239,68,68,0.4); }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 22px; }
+.panel > h2 {
+  margin: 0; padding: 14px 20px; font-size: 11.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.panel > .body { padding: 16px 20px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; font-family: var(--mono); font-size: 12.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+th { color: var(--muted); font-weight: 500; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+.pill {
+  display: inline-block; padding: 2px 9px; border-radius: 99px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; font-family: var(--mono);
+}
+.pill.pass  { background: rgba(34,197,94,0.16); color: var(--green); }
+.pill.fail  { background: rgba(239,68,68,0.16); color: var(--red); }
+.pill.flaky { background: rgba(234,179,8,0.18); color: var(--yellow); }
+.pill.skip  { background: rgba(156,163,175,0.18); color: var(--muted); }
+details.test {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  margin: 8px 0; overflow: hidden;
+}
+details.test > summary {
+  cursor: pointer; padding: 10px 16px; display: flex; gap: 14px; align-items: center;
+  list-style: none;
+}
+details.test > summary::-webkit-details-marker { display: none; }
+details.test > summary::before { content: '▸'; color: var(--muted); transition: transform 0.15s; font-size: 11px; }
+details.test[open] > summary::before { transform: rotate(90deg); }
+details.test.fail  { border-color: rgba(239,68,68,0.35); }
+details.test.flaky { border-color: rgba(234,179,8,0.35); }
+details.test .name { flex: 1; font-family: var(--mono); font-size: 12.5px; }
+details.test .desc { color: var(--muted); font-size: 12px; }
+details.test .time {
+  color: var(--muted); font-family: var(--mono); font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.detail { padding: 4px 18px 18px 36px; font-size: 12.5px; }
+.detail h4 {
+  margin: 14px 0 6px; font-size: 10.5px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.detail h4:first-child { margin-top: 6px; }
+.detail .msg {
+  color: #fda4af; font-family: var(--mono); font-size: 12.5px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.detail pre {
+  background: #06091a; border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; margin: 0; overflow: auto; max-height: 280px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.55; color: #cbd5e1;
+}
+.detail pre.empty { color: var(--muted); font-style: italic; }
+.section-title {
+  margin: 36px 0 12px; font-size: 11.5px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.filter {
+  background: var(--panel); border: 1px solid var(--border); color: var(--fg);
+  padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+  font-family: inherit;
+}
+.filter:hover { border-color: #44508c; }
+.filter.active { background: #1c2549; border-color: var(--blue); color: #cfd9ff; }
+.filter .count { color: var(--muted); margin-left: 8px; font-variant-numeric: tabular-nums; }
+.filter.active .count { color: #aab9e8; }
+.hidden { display: none !important; }
+.note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<header><h1>csvdiff test harness report</h1><div class="meta"><div>Run: 2026-06-13T10:29:19Z</div><div>csvdiff: ./.venv/bin/csvdiff</div><div>retries: 3 (functional), 5 (perf)</div></div></header>
+<main>
+<section class="cards"><div class="card pass"><h3>PASS</h3><div class="num">98</div></div><div class="card fail"><h3>FAIL</h3><div class="num">0</div></div><div class="card flaky"><h3>FLAKY</h3><div class="num">0</div></div><div class="card skip"><h3>SKIPPED</h3><div class="num">0</div></div></section>
+<section class="panel"><h2>Probe</h2><div class="body"><dl class="kv"><dt>Key flag</dt><dd>--key</dd><dt>Format flag</dt><dd>--format</dd><dt>No-inference flag</dt><dd>-I</dd><dt>Exit codes</dt><dd>OK=0 · DIFF=1 · USAGE=2</dd><dt>No-key policy</dt><dd>positional</dd><dt>Duplicate-key policy</dt><dd>error</dd><dt>Memory note in --help</dt><dd>yes</dd></dl></div></section>
+<section class="panel"><h2>By category</h2><div class="body"><table><tr><th>Category</th><th>Total</th><th>Pass</th><th>Fail</th><th>Flaky</th><th>Skipped</th></tr><tr><td>happy</td><td class="num">12</td><td class="num">12</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr><tr><td>alternate</td><td class="num">20</td><td class="num">20</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr><tr><td>error</td><td class="num">15</td><td class="num">15</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr><tr><td>edge</td><td class="num">21</td><td class="num">21</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr><tr><td>inherited</td><td class="num">22</td><td class="num">22</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr><tr><td>perf</td><td class="num">8</td><td class="num">8</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr></table></div></section>
+<h3 class="section-title">All tests (98)</h3>
+<div class="filters"><button class="filter active" data-status="all">All <span class="count">98</span></button><button class="filter" data-status="pass">Pass <span class="count">98</span></button><button class="filter" data-status="fail">Fail <span class="count">0</span></button><button class="filter" data-status="flaky">Flaky <span class="count">0</span></button><button class="filter" data-status="skip">Skipped <span class="count">0</span></button></div>
+<div id="tests"><details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/01_identical</span><span class="desc">two identical files compare equal</span><span class="time">165ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/02_no_key_identical</span><span class="desc">no-key default behavior — identical</span><span class="time">163ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/03_added_row</span><span class="desc">added row classified + marker</span><span class="time">173ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/04_removed_row</span><span class="desc">removed row classified + marker</span><span class="time">165ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/05_changed_field</span><span class="desc">per-field change with before→after</span><span class="time">184ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/06_mixed_counts</span><span class="desc">mixed counts add+rm+chg+unchanged</span><span class="time">194ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/07_unchanged_fields_omitted</span><span class="desc">unchanged fields not reported</span><span class="time">182ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/08_no_row_section_when_equal</span><span class="desc">no row section when identical</span><span class="time">163ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/09a_no_key_positional</span><span class="desc">no-key default = positional (if so)</span><span class="time">161ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/09b_no_key_require</span><span class="desc">no-key default = require-key (if so)</span><span class="time">44ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/10_help_mentions_memory</span><span class="desc">epilog mentions memory tradeoff</span><span class="time">48ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">happy/11_determinism</span><span class="desc">two runs produce identical stdout</span><span class="time">279ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/01_composite_key</span><span class="desc">composite key on year,quarter</span><span class="time">190ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/02_three_col_composite</span><span class="desc">3-column composite key</span><span class="time">161ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/03_key_by_index</span><span class="desc">key by 1-based column index</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/04_jsonl_format</span><span class="desc">jsonl output is valid and structured</span><span class="time">253ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/04b_jsonl_identical</span><span class="desc">jsonl output on identical inputs</span><span class="time">226ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/05_summary_format</span><span class="desc">summary output is headline-only counts</span><span class="time">176ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/05b_summary_identical</span><span class="desc">summary is one headline line when equal</span><span class="time">169ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/06_stdin_second</span><span class="desc">second input from STDIN</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/07_stdin_first</span><span class="desc">first input from STDIN</span><span class="time">159ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/08_schema_added_col</span><span class="desc">added column reported as schema diff</span><span class="time">164ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/09_schema_removed_col</span><span class="desc">removed column reported as schema diff</span><span class="time">158ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/10_schema_reordered</span><span class="desc">reordered columns surface separately</span><span class="time">161ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/11_resorted</span><span class="desc">re-sorted file: no row diffs (keyed)</span><span class="time">159ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/12_no_inference_string</span><span class="desc">-I: 30 ≠ 30.0</span><span class="time">147ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/13_typed_equal</span><span class="desc">typed: 30 == 30.0</span><span class="time">164ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/14_tabs</span><span class="desc">-t works on TSV inputs</span><span class="time">165ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/15_semi_delimiter</span><span class="desc">-d &#x27;;&#x27; works</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/16_latin1</span><span class="desc">-e latin1 works</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/17_no_header_row</span><span class="desc">-H works with key-by-index</span><span class="time">161ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">alternate/18_skip_lines</span><span class="desc">-K 2 skips comments</span><span class="time">164ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/01_no_input</span><span class="desc">no input → non-zero exit</span><span class="time">130ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/02_one_arg_piped_stdin</span><span class="desc">one arg + piped stdin = valid diff</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/03_three_args</span><span class="desc">three positionals → usage error</span><span class="time">147ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/04_missing_file</span><span class="desc">missing file → clean error</span><span class="time">165ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/05_unreadable_file</span><span class="desc">unreadable file → clean error</span><span class="time">190ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/06_bad_key_name</span><span class="desc">bad --key name → usage error</span><span class="time">161ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/07_bad_key_index</span><span class="desc">bad --key index → usage error</span><span class="time">151ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/08_dup_keys_first</span><span class="desc">duplicate keys in file A (per policy)</span><span class="time">162ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/09_dup_keys_second</span><span class="desc">duplicate keys in file B (per policy)</span><span class="time">158ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/10_help</span><span class="desc">-h/--help → usage on stdout</span><span class="time">260ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/11_version</span><span class="desc">-V/--version → version on stdout</span><span class="time">253ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/12_invalid_format</span><span class="desc">--format yaml → usage error</span><span class="time">137ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/13_t_overrides_d</span><span class="desc">-t overrides -d, doesn&#x27;t error</span><span class="time">166ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/14_stdin_ignored_w_2_files</span><span class="desc">stdin ignored when 2 file args given</span><span class="time">159ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">error/15_empty_key_arg</span><span class="desc">--key &#x27;&#x27; = no key (csvjoin-consistent)</span><span class="time">159ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/01_empty_files</span><span class="desc">both 0-byte files: no traceback</span><span class="time">163ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/02_header_only</span><span class="desc">both header-only: 0 diffs</span><span class="time">149ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/03_single_row_change</span><span class="desc">1-row file with 1 change</span><span class="time">164ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/04_lf_vs_crlf</span><span class="desc">LF vs CRLF: 0 diffs</span><span class="time">162ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/05_bom</span><span class="desc">UTF-8 BOM transparent</span><span class="time">159ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/06_unicode</span><span class="desc">CJK + emoji round-trip</span><span class="time">170ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/07_embedded_newline</span><span class="desc">newline in quoted cell</span><span class="time">155ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/08_long_cell</span><span class="desc">100KB cell with -z bump</span><span class="time">229ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/09_leading_zeros</span><span class="desc">007 ≠ 7 with --no-leading-zeroes</span><span class="time">155ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/10_date_format</span><span class="desc">--date-format MM/DD/YYYY</span><span class="time">161ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/11_blanks</span><span class="desc">blanks vs --blanks toggle</span><span class="time">269ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/12_trailing_newline</span><span class="desc">trailing newline ignored</span><span class="time">158ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/13_skipinitialspace</span><span class="desc">-S strips leading spaces</span><span class="time">153ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/14_empty_strings</span><span class="desc">empty cells equal empty cells</span><span class="time">123ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/15_schema_and_row_drift</span><span class="desc">schema section precedes row markers</span><span class="time">177ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/16_empty_to_three_added</span><span class="desc">header-only vs 3 rows → 3 added</span><span class="time">164ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/17_three_to_empty_removed</span><span class="desc">3 rows vs header-only → 3 removed</span><span class="time">163ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/18_keyonly_no_shared_data</span><span class="desc">only key column shared → schema only</span><span class="time">153ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/19_all_rows_changed</span><span class="desc">all rows changed, none unchanged</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/20_dup_column_names</span><span class="desc">duplicate column names: no traceback</span><span class="time">154ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">edge/21_comma_in_key_name</span><span class="desc">comma-in-key-name → clean usage error</span><span class="time">174ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/01_version</span><span class="desc">-V</span><span class="time">151ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/02_help</span><span class="desc">-h</span><span class="time">149ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/03_delimiter</span><span class="desc">-d &#x27;;&#x27;</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/04_tabs</span><span class="desc">-t</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/05_quotechar</span><span class="desc">-q &#x27;\&#x27;&#x27;</span><span class="time">172ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/06_quoting_mode</span><span class="desc">-u 1</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/07_no_doublequote</span><span class="desc">-b</span><span class="time">167ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/08_escapechar</span><span class="desc">-p</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/09_maxfieldsize</span><span class="desc">-z</span><span class="time">227ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/10_encoding</span><span class="desc">-e latin1</span><span class="time">158ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/11_locale</span><span class="desc">-L en_US</span><span class="time">166ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/12_skipinitialspace</span><span class="desc">-S</span><span class="time">162ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/13_blanks_null</span><span class="desc">--blanks / --null-value</span><span class="time">162ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/14_date_format</span><span class="desc">--date-format</span><span class="time">163ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/15_no_leading_zeroes</span><span class="desc">--no-leading-zeroes</span><span class="time">162ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/16_no_header_row</span><span class="desc">-H</span><span class="time">160ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/17_skip_lines</span><span class="desc">-K</span><span class="time">165ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/18_verbose_traceback</span><span class="desc">-v toggles traceback printing</span><span class="time">267ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/19_linenumbers</span><span class="desc">-l is an accepted no-op</span><span class="time">161ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/20_add_bom</span><span class="desc">--add-bom emits EF BB BF</span><span class="time">153ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/21_zero_based</span><span class="desc">--zero with -k 0</span><span class="time">164ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">inherited/22_no_inference</span><span class="desc">-I / --no-inference</span><span class="time">150ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">perf/01_small_1k</span><span class="desc">1k rows × 5 cols, 1% diff &lt; 5s</span><span class="time">273ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">perf/02_medium_10k</span><span class="desc">10k rows × 5 cols, 1% diff &lt; 15s</span><span class="time">403ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">perf/03_large_100k</span><span class="desc">100k rows × 5 cols, 1% diff &lt; 120s</span><span class="time">1889ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">perf/04_wide_10kx50</span><span class="desc">10k × 50 cols &lt; 60s</span><span class="time">3905ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">perf/05_identical_large</span><span class="desc">50k identical files &lt; 60s</span><span class="time">1024ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">perf/06_worst_case</span><span class="desc">50k all-added &lt; 60s</span><span class="time">785ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">perf/07_timing_stability</span><span class="desc">5 runs: min/max ratio ≤ 3x</span><span class="time">1295ms</span></summary></details>
+<details class="test pass" data-status="pass"><summary><span class="pill pass">PASS</span><span class="name">perf/08_output_stability</span><span class="desc">byte-identical stdout across 2 runs</span><span class="time">514ms</span></summary></details>
+</div>
+</main>
+<script>
+document.querySelectorAll('.filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const want = btn.dataset.status;
+        document.querySelectorAll('#tests > details.test').forEach(d => {
+            if (want === 'all' || d.dataset.status === want) {
+                d.classList.remove('hidden');
+            } else {
+                d.classList.add('hidden');
+            }
+        });
+    });
+});
+</script>
+</body></html>
