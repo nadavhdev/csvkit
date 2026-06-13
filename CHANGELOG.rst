@@ -1,3 +1,8 @@
+Unreleased
+----------
+
+-  feat: Add :doc:`/scripts/csvdiff`, a new command that semantically diffs two CSV files. It can match rows by a key column (so re-sorted or re-inserted rows still line up), report per-field before/after changes within matched rows, and distinguish schema drift (added, removed, or reordered columns) from row-level differences. Supports human-readable, JSON, and CSV output formats. Exits 0 when the files are equivalent, 1 when differences are found, and 2 on usage errors.
+
 2.2.0 - December 15, 2025
 -------------------------
 

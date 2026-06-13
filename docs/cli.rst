@@ -21,6 +21,7 @@ Processing
 
     scripts/csvclean
     scripts/csvcut
+    scripts/csvdiff
     scripts/csvgrep
     scripts/csvjoin
     scripts/csvsort
