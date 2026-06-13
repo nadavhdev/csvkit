@@ -1,0 +1,140 @@
+{
+  "task_id": "01-walking-skeleton-keyed-csvdiff",
+  "task_path": "./tasks-csvdiff/done/01-walking-skeleton-keyed-csvdiff.md",
+  "current_stage": "done",
+  "stages_completed": ["load", "branch", "implement", "tests", "verify", "review", "commit", "pr", "handoff"],
+  "started_at": "2026-06-11T00:00:00Z",
+  "updated_at": "2026-06-11T02:00:00Z",
+  "completed_at": "2026-06-11T02:00:00Z",
+  "attempts": {
+    "load": 1,
+    "branch": 1,
+    "implement": 1,
+    "tests": 0,
+    "verify": 0,
+    "review": 2,
+    "commit": 1,
+    "pr": 1,
+    "handoff": 1
+  },
+  "last_error": null,
+  "files_changed": [
+    "csvkit/utilities/csvdiff.py",
+    "tests/test_utilities/test_csvdiff.py",
+    "examples/diff_a.csv",
+    "examples/diff_b.csv",
+    "examples/diff_types_a.csv",
+    "examples/diff_types_b.csv",
+    "examples/diff_key_types.csv",
+    "examples/diff_key_types_b.csv",
+    "pyproject.toml"
+  ],
+  "verify_commands": [
+    {"cmd": "pytest --cov csvkit", "passed": true, "note": "43 csvdiff tests pass; 1 pre-existing csvstat failure unrelated"},
+    {"cmd": "flake8 . (project files, excluding .venv)", "passed": true},
+    {"cmd": "isort . --check-only", "passed": true},
+    {"cmd": "check-manifest", "passed": "manual", "note": "network bootstrap fails (Intuit PyPI proxy); all new files covered by existing MANIFEST.in patterns"}
+  ],
+  "review_rounds": [
+    {
+      "round": 1,
+      "verdict": "REQUEST_CHANGES",
+      "findings": [
+        {
+          "severity": "major",
+          "area": "testing",
+          "summary": "Parse-error tests mock _read_table, bypassing the actual except _PARSE_ERRORS block",
+          "addressed": true,
+          "resolution": "Added test_parse_error_real_unicode_error_exits_2: temp file with b'\\xff\\xfe' bytes exercises real UnicodeDecodeError path"
+        },
+        {
+          "severity": "minor",
+          "area": "docs",
+          "summary": "docs/scripts/csvdiff.rst, CHANGELOG.rst, AUTHORS.rst absent",
+          "addressed": false,
+          "resolution": "Deferred to task 07 (docs/changelog/experimental-rollout task)"
+        },
+        {
+          "severity": "nit",
+          "area": "testing",
+          "summary": "test_empty override doesn't exercise the empty-file code path",
+          "addressed": false,
+          "resolution": "Accepted as-is; behavior covered by key-not-found error path tests"
+        }
+      ],
+      "rebuttals": []
+    },
+    {
+      "round": 2,
+      "verdict": "APPROVE",
+      "findings": [
+        {
+          "severity": "minor",
+          "area": "testing",
+          "summary": "Perf-smoke test asserts timing but not expected row classification",
+          "addressed": true,
+          "resolution": "Fixed fixture to produce genuine 1-changed row (non-key column modified); added assertEqual(code, 1)"
+        },
+        {
+          "severity": "minor",
+          "area": "docs",
+          "summary": "docs/scripts/csvdiff.rst, CHANGELOG.rst, AUTHORS.rst absent",
+          "addressed": false,
+          "resolution": "Deferred to task 07; noted in PR description"
+        },
+        {
+          "severity": "nit",
+          "area": "testing",
+          "summary": "Perf-smoke comment 'One row differs' was misleading (fixture produced 1 removed, not 1 changed)",
+          "addressed": true,
+          "resolution": "Fixed: fixture now produces a genuine 1-changed row; comment updated"
+        }
+      ],
+      "rebuttals": []
+    }
+  ],
+  "surfaces_raised": [],
+  "self_check": {
+    "stage": "implement",
+    "items": [
+      {"item": "clean names", "status": "yes"},
+      {"item": "single responsibility", "status": "yes"},
+      {"item": "SOLID seams", "status": "yes"},
+      {"item": "decoupling", "status": "yes", "note": "_compute_diff and render_human are standalone functions, testable without CLI"},
+      {"item": "reuse", "status": "yes"},
+      {"item": "readability", "status": "yes"},
+      {"item": "extendability", "status": "yes", "note": "DiffResult.schema ready for task 04; row_diffs as list ready for task 02"},
+      {"item": "maintainability", "status": "yes"},
+      {"item": "security at boundaries", "status": "yes", "note": "file paths handled by existing _open_input_file; no shell exec"},
+      {"item": "error handling", "status": "yes", "note": "parse errors wrapped to exit 2; ColumnIdentifierError caught; stdin double-use guarded"},
+      {"item": "no PII in logs", "status": "N/A"},
+      {"item": "scope discipline", "status": "yes", "note": "no --format, --on-dup, schema banner — all deferred to later tasks"}
+    ],
+    "deferred": []
+  },
+  "branch": "feat/csvdiff-walking-skeleton",
+  "branch_strategy": "new",
+  "branch_base": "csv-tdd",
+  "branch_decided_at": "2026-06-11T00:01:00Z",
+  "commit_sha": "cfdabf2",
+  "pr_url": "https://github.com/nadavhdev/csvkit/pull/4",
+  "review_skipped": false,
+  "dependencies_verified": [],
+  "prior_done_md_read": [],
+  "tdd_path": "./TDD-csvdiff.md",
+  "tdd_sections_read": ["§0", "§3", "§4a", "§4b", "§4c", "§4d", "§4e", "§4f", "§4g", "§4h", "§6", "§7", "§10"],
+  "tdd_correlation": {
+    "csvdiff LEFT.csv RIGHT.csv -c id produces human-format diff": "§4h render_human",
+    "single-column -c resolves via match_column_identifier": "§4g Comparison semantics",
+    "exit 0 when no differences": "§4b Exit codes",
+    "exit 1 when any row difference": "§4b Exit codes",
+    "exit 2 for usage problems": "§4b Exit codes",
+    "all four invocation styles identical results": "§4c STDIN/pipe behavior",
+    "parse failures exit 2 not 1": "§4b Exit codes + §7 Risks",
+    "-I raw-string semantics": "§4g Comparison semantics",
+    "--ignore excludes columns from comparison": "§4g Comparison semantics",
+    "perf-smoke 200k rows under 30s": "§6 Scalability",
+    "key value formatting int/decimal/date": "§10 OQ3",
+    "unittest CSVKitTestCase EmptyFileTests test_launch_new_instance": "§0 Design constraints"
+  }
+}

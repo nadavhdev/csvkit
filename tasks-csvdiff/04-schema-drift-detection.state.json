@@ -1,0 +1,111 @@
+{
+  "task_id": "04-schema-drift-detection",
+  "task_path": "./tasks-csvdiff/04-schema-drift-detection.md",
+  "current_stage": "done",
+  "stages_completed": ["load", "branch", "implement", "tests", "verify", "review", "checkpoint", "commit", "pr", "handoff"],
+  "started_at": "2026-06-11T17:30:00Z",
+  "updated_at": "2026-06-11T18:20:00Z",
+  "review_gate_decision": "passed-through (conditional: 2 rounds but max severity minor, no major/blocker)",
+  "completed_at": "2026-06-11T18:20:00Z",
+  "attempts": {
+    "load": 1,
+    "branch": 1,
+    "implement": 1,
+    "tests": 1,
+    "verify": 2,
+    "review": 2
+  },
+  "last_error": null,
+  "files_changed": [
+    "csvkit/utilities/csvdiff.py",
+    "tests/test_utilities/test_csvdiff.py",
+    "examples/diff_schema_base.csv",
+    "examples/diff_schema_added.csv",
+    "examples/diff_schema_reordered.csv",
+    "examples/diff_schema_all_right.csv",
+    "examples/diff_schema_rename_left.csv",
+    "examples/diff_schema_rename_right.csv",
+    "examples/diff_schema_added_changed.csv"
+  ],
+  "verify_commands": [
+    {"cmd": "pytest --cov csvkit (csvdiff: 155 pass; 1 pre-existing unrelated csvstat locale failure)", "passed": true, "ts": "2026-06-11T17:52:00Z"},
+    {"cmd": "flake8 . --exclude=.venv", "passed": true, "ts": "2026-06-11T17:53:00Z"},
+    {"cmd": "isort . --check-only --skip .venv", "passed": true, "ts": "2026-06-11T17:53:30Z"},
+    {"cmd": "check-manifest", "passed": true, "substituted": true, "reason": "network-blocked: `python -m build --sdist` cannot reach PyPI to bootstrap an isolated build. Manual check: all 6 new files are under examples/, covered by MANIFEST.in line 7 'recursive-include examples *'; modified files are existing tracked sources; no files added outside examples/.", "ts": "2026-06-11T17:54:00Z"}
+  ],
+  "review_rounds": [
+    {
+      "round": 1,
+      "diff_sha": "working-tree-vs-positional-fallback",
+      "verdict": "APPROVE",
+      "findings": [
+        {
+          "severity": "minor",
+          "area": "testing",
+          "summary": "test_added_column_not_reported_in_row_diffs asserts nothing (no row-diff lines for BASE vs ADDED)",
+          "addressed": true,
+          "addressed_with_modification": false
+        }
+      ],
+      "rebuttals": [],
+      "ts": "2026-06-11T18:05:00Z"
+    },
+    {
+      "round": 2,
+      "diff_sha": "working-tree-round-2",
+      "verdict": "APPROVE",
+      "findings": [],
+      "rebuttals": [],
+      "prior_findings_review": [
+        {"ref": "1.1", "status": "closed", "note": "test now uses BASE vs ADDED_CHANGED with a real '~' line + non-vacuity guard"}
+      ],
+      "ts": "2026-06-11T18:10:00Z"
+    }
+  ],
+  "surfaces_raised": [],
+  "self_check": {
+    "stage": "implement",
+    "ts": "2026-06-11T17:44:00Z",
+    "items": [
+      {"item": "clean names", "status": "yes", "note": "_compute_schema_delta, _schema_changed, _render_schema_banner, show_schema read as prose"},
+      {"item": "single responsibility", "status": "yes", "note": "delta-construction, predicate, banner-render each isolated"},
+      {"item": "SOLID seams", "status": "yes", "note": "engine returns SchemaDelta; renderer decides display; main() decides activeness"},
+      {"item": "decoupling", "status": "yes", "note": "schema_active computed in main, passed in; engine/renderer have no flag knowledge"},
+      {"item": "reuse", "status": "yes", "note": "extracted _compute_schema_delta to remove task-03's flagged duplication across both compute fns"},
+      {"item": "readability", "status": "yes", "note": null},
+      {"item": "extendability", "status": "yes", "note": "_schema_changed + show_schema reusable by task-05 jsonl and task-06 summary renderers"},
+      {"item": "maintainability", "status": "yes", "note": null},
+      {"item": "security at boundaries", "status": "N-A", "note": "no new external input; reuses task-01 parse-error handling"},
+      {"item": "error handling", "status": "yes", "note": "no new error paths; exit-code contract extended per TDD 4b"},
+      {"item": "no PII in logs", "status": "N-A", "note": "CLI tool, no logging"},
+      {"item": "scope discipline", "status": "yes", "note": "schema-delta extraction was explicitly handed to task-04 by task-03 done.md; rename/encoding rst docs left to task-07 as spec assigns"}
+    ],
+    "deferred": []
+  },
+  "branch": "feat/csvdiff-schema-drift",
+  "branch_strategy": "new",
+  "branch_base": "feat/csvdiff-positional-fallback",
+  "branch_decided_at": "2026-06-11T17:32:00Z",
+  "review_gate_preference": "conditional",
+  "commit_sha": "1e5652c",
+  "pr_url": "https://github.com/nadavhdev/csvkit/pull/8",
+  "review_skipped": false,
+  "dependencies_verified": ["01-walking-skeleton-keyed-csvdiff"],
+  "prior_done_md_read": [
+    "tasks-csvdiff/01-walking-skeleton-keyed-csvdiff.done.md",
+    "tasks-csvdiff/02-composite-key-and-duplicate-handling.done.md",
+    "tasks-csvdiff/03-no-key-positional-fallback.done.md"
+  ],
+  "tdd_path": "./TDD-csvdiff.md",
+  "tdd_sections_read": ["§0", "§3", "§4a", "§4b", "§4f", "§4g", "§4h", "§6", "§7", "§10"],
+  "tdd_correlation": {
+    "identical schema → no banner, row diff unchanged": "§4h Human renderer",
+    "added column → '! schema changed:' banner, excluded from row diffs": "§4f SchemaDelta + §4g intersection + §4h",
+    "removed column → 'removed:' in banner": "§4f SchemaDelta + §4h",
+    "reordered common columns → 'reordered: true'": "§4f SchemaDelta + §4h",
+    "schema-only diff exits 1 not 0": "§4b Exit codes",
+    "--no-schema-check suppresses banner, exit by rows alone": "§4a Command surface + §4b",
+    "-H suppresses schema regardless of --no-schema-check, documented in epilog": "§10 OQ7 + §7",
+    "rename reported as removed+added": "§7 Risks (rename-as-removed+added)"
+  }
+}

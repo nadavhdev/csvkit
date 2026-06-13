@@ -1,0 +1,83 @@
+{
+  "task_id": "05-jsonl-renderer",
+  "task_path": "./tasks-csvdiff/05-jsonl-renderer.md",
+  "current_stage": "done",
+  "stages_completed": ["load", "plan", "branch", "implement", "tests", "verify", "review", "checkpoint", "commit", "pr", "handoff"],
+  "started_at": "2026-06-12T00:00:00Z",
+  "updated_at": "2026-06-12T00:40:00Z",
+  "completed_at": "2026-06-12T00:40:00Z",
+  "attempts": {
+    "load": 1,
+    "plan": 1,
+    "branch": 1,
+    "implement": 1,
+    "tests": 1,
+    "verify": 1,
+    "review": 2
+  },
+  "last_error": null,
+  "files_changed": [
+    "csvkit/utilities/csvdiff.py",
+    "tests/test_utilities/test_csvdiff.py"
+  ],
+  "verify_commands": [
+    {"cmd": "pytest --cov csvkit", "passed": true, "note": "514 passed, 1 pre-existing csvstat locale failure"},
+    {"cmd": "flake8 .", "passed": true},
+    {"cmd": "isort . --check-only", "passed": true}
+  ],
+  "review_rounds": [
+    {
+      "round": 1,
+      "verdict": "REQUEST_CHANGES",
+      "findings": [
+        {"severity": "major", "area": "testing", "summary": "TestCSVDiffJSONL duplicated get_output/_exit_code_for from _CSVDiffOutputMixin", "addressed": true},
+        {"severity": "major", "area": "testing", "summary": "Decimal serialization test used -I, bypassing default_str_decimal", "addressed": true},
+        {"severity": "minor", "area": "testing", "summary": "compared field not asserted in summary tests", "addressed": true},
+        {"severity": "nit", "area": "code-quality", "summary": "three list comprehensions for counts; single counter loop preferred", "addressed": true}
+      ]
+    },
+    {
+      "round": 2,
+      "verdict": "APPROVE",
+      "findings": [],
+      "prior_findings_review": [
+        {"ref": "1.1", "status": "closed"},
+        {"ref": "1.2", "status": "closed"},
+        {"ref": "1.3", "status": "closed"},
+        {"ref": "1.4", "status": "closed"}
+      ]
+    }
+  ],
+  "surfaces_raised": [],
+  "plan_mode": "presented-approved",
+  "plan_approved_at": "2026-06-12T00:04:00Z",
+  "branch_decided_in_plan": true,
+  "branch": "feat/csvdiff-jsonl-renderer",
+  "branch_strategy": "new",
+  "branch_base": "feat/csvdiff-schema-drift",
+  "branch_decided_at": "2026-06-12T00:05:00Z",
+  "review_gate_preference": "conditional",
+  "commit_sha": "2a7aae1",
+  "pr_url": "https://github.com/nadavhdev/csvkit/pull/9",
+  "review_skipped": false,
+  "dependencies_verified": ["01-walking-skeleton-keyed-csvdiff", "04-schema-drift-detection"],
+  "prior_done_md_read": [
+    "./tasks-csvdiff/01-walking-skeleton-keyed-csvdiff.done.md",
+    "./tasks-csvdiff/02-composite-key-and-duplicate-handling.done.md",
+    "./tasks-csvdiff/03-no-key-positional-fallback.done.md",
+    "./tasks-csvdiff/04-schema-drift-detection.done.md"
+  ],
+  "tdd_path": "./TDD-csvdiff.md",
+  "tdd_sections_read": ["§0", "§4a", "§4f", "§4h", "§4i"],
+  "tdd_correlation": {
+    "equal-files → summary only": "§4h render_jsonl event grammar",
+    "row-only diff events": "§4h render_jsonl event grammar",
+    "schema event iff non-empty (show_schema gated)": "§4h render_jsonl + §4a --no-schema-check",
+    "changed/added/removed fields shapes": "§4h render_jsonl event grammar",
+    "composite key event shape": "§4h key is JSON object",
+    "no-key positional key {row: N}": "§4h key object + task-03 done.md sentinel",
+    "Decimal/date serialization via default_str_decimal": "§4i external deps",
+    "exit codes 0/1/2": "§4b exit codes (unchanged)",
+    "--format flag -f short form": "§4a command surface"
+  }
+}
