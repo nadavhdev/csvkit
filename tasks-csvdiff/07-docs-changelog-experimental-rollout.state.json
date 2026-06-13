@@ -48,7 +48,7 @@
   "surfaces_raised": [],
   "verify_commands": [],
   "review_rounds": [],
-  "commit_sha": null,
-  "pr_url": null,
+  "commit_sha": "11298fd",
+  "pr_url": "https://github.com/nadavhdev/csvkit/pull/12",
   "review_skipped": false
 }
